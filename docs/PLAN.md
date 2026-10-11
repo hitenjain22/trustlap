@@ -86,3 +86,12 @@ Golden fixtures live in `web/tests/parity/golden/` rather than `web/public/artif
 - Rain e2e test first failed because the cars were still accelerating off the grid at 6 s; measured the series (settles ~11 s; −4.5% mean speed 1 s after rain 0 → 1, still falling) and moved the measurement to 12 s.
 - Frame rate: 60 fps at DPR 1 but 36 at DPR 2. Not the rain (36 fps with no rain either), not canvas size (a bare 2880 px canvas does 60). Cause: `backdrop-filter` on the hero panel. Removed → 60 fps everywhere, no long tasks.
 - Lighthouse desktop, home: 91/96/100/91 → 100/100/100/100 after batching kerbs, adding robots.txt and underlining in-text links.
+
+---
+
+## M7 follow-ups (2026-10-11 afternoon)
+
+1. Playground telemetry (SPEC 10.2): speed (km/h ↔ mph), lap time, best lap, Δ vs first ghost, front/rear grip gauges (true tick vs estimate bar), crash-risk meter with the governor threshold, 10 s sparklines, steering and throttle/brake bars. Snapshot gains per-car inputs and a focused-car lap timer.
+2. Presets, URL state (SPEC 10.5, zod-parsed and clamped, replaceState debounced 300 ms), Copy link, keyboard shortcuts (SPEC 10.4).
+3. Draw a track (SPEC 6.1 drawn tracks + 10.2): pointer path → RDP → control points → scale → validate with specific messages → Auto-fix.
+4. Load-time long tasks on retina.

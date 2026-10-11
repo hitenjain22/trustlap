@@ -7,7 +7,7 @@
 import type { SimConfig } from '../sim/config.ts'
 
 export const HEADER = 4 // [simTimeS, stepIndex, leaderLap (1-based), crashesTotal]
-export const STRIDE = 12 // per car, see CarField
+export const STRIDE = 17 // per car, see CarField
 export const CarField = {
   X: 0,
   Y: 1,
@@ -21,6 +21,11 @@ export const CarField = {
   PCrash: 9, // NaN until M5
   Flags: 10, // bit flags, see CarFlag
   Driver: 11, // index into DRIVER_KINDS
+  Steer: 12, // last action, steering [−1, 1]
+  Long: 13, // last action, throttle (+) / brake (−) [−1, 1]
+  LapTime: 14, // current lap so far (s)
+  BestLap: 15, // best completed lap (s), NaN until one is done
+  LastLap: 16, // last completed lap (s), NaN until one is done
 } as const
 
 /** Driver identities (SPEC 11.3). Order matters: it's the snapshot's Driver index. */
@@ -50,6 +55,7 @@ export const CarFlag = {
 /** Condition values the UI can set (all optional; omitted keys keep their value). */
 export interface ConditionValues {
   rain: number // 0..1
+  muDry: number // dry-road grip (training 1.0–1.15; "black ice" 0.25)
   puddles: number // active puddles 0..8
   windMps: number
   windDirDeg: number // direction the wind blows toward, 0 = +x
@@ -104,11 +110,14 @@ export interface TrackGeometry {
 
 export interface SimApi {
   init(opts: SimInit): Promise<TrackGeometry>
-  setTrack(trackSeed: number): Promise<TrackGeometry>
+  /** Null if called before init finished (init then builds this track). */
+  setTrack(trackSeed: number): Promise<TrackGeometry | null>
   setConditions(values: Partial<ConditionValues>): Promise<number> // returns active puddles
   setDrivers(driver: DriverKind, ghosts: DriverKind[]): Promise<void>
   /** Training Lab: drive the "teacher" cars with a timeline checkpoint (checkpoints/<name>). */
   setCheckpoint(name: string): Promise<void>
+  /** Safety governor for student cars (SPEC 7.7): ease off above crash risk τ. */
+  setGovernor(on: boolean, tau: number): Promise<void>
   reset(): Promise<void>
   setSpeed(multiplier: number): Promise<void>
   pause(): Promise<void>

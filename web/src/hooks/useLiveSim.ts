@@ -17,6 +17,7 @@ import type { SimConfig } from '../sim/config.ts'
 import {
   CarField,
   CarFlag,
+  DRIVER_KINDS,
   HEADER,
   STRIDE,
   type ConditionValues,
@@ -37,6 +38,8 @@ export interface LiveSimOptions {
   driver: DriverKind
   ghosts?: DriverKind[]
   showFocus?: boolean
+  /** Sample the focused car for a telemetry panel. */
+  telemetry?: boolean
   /** Training Lab: drive the teacher cars with this timeline checkpoint. */
   checkpoint?: string
   /** How many students the student driver runs (1 = light, no crash-risk estimate). */
@@ -46,6 +49,28 @@ export interface LiveSimOptions {
   autoPuddles?: boolean
   fitInsetLeft?: () => number
 }
+
+/** The focused car's live readings (Playground telemetry), sampled at 10 Hz. */
+export interface Telemetry {
+  kind: DriverKind
+  speedMps: number
+  lapTime: number
+  bestLap: number
+  lastLap: number
+  ghostLastLap: number // first ghost's last lap (NaN without a ghost or a lap)
+  muFront: number
+  muRear: number
+  muHatFront: number // NaN unless the driver estimates grip (student)
+  muHatRear: number
+  pCrash: number // NaN unless calibrated ensemble
+  steer: number
+  long: number
+  crashed: boolean
+  /** Last 10 s (100 samples): speed, true and estimated rear grip, crash risk. */
+  history: { speed: number[]; muRear: number[]; muHatRear: number[]; pCrash: number[] }
+}
+
+const HISTORY = 100
 
 export interface LiveSimStatus {
   phase: 'loading' | 'ready' | 'error'
@@ -75,6 +100,7 @@ export function useLiveSim(opts: LiveSimOptions) {
     available: ['scripted'],
   })
   const initial = useRef(opts)
+  const [telemetry, setTelemetry] = useState<Telemetry | null>(null)
   const valuesRef = useRef<Partial<ConditionValues>>({ ...opts.conditions })
   const driversRef = useRef({ driver: opts.driver, ghosts: opts.ghosts ?? [] })
 
@@ -85,6 +111,7 @@ export function useLiveSim(opts: LiveSimOptions) {
     const reduced = prefersReducedMotion()
     let disposed = false
     let lastStatus = 0
+    let lastTelemetry = 0
     const worker = new Worker(new URL('../worker/sim.worker.ts', import.meta.url), {
       type: 'module',
     })
@@ -163,6 +190,10 @@ export function useLiveSim(opts: LiveSimOptions) {
           Comlink.proxy((snap: Float32Array) => {
             renderer.pushSnapshot(snap)
             const now = performance.now()
+            if (o.telemetry && now - lastTelemetry >= 100) {
+              lastTelemetry = now
+              setTelemetry((prev) => readTelemetry(snap, prev))
+            }
             if (now - lastStatus > 250) {
               lastStatus = now
               // Mean speed of cars on track, published for tests and the a11y summary.
@@ -219,6 +250,7 @@ export function useLiveSim(opts: LiveSimOptions) {
     const renderer = rendererRef.current
     if (!api || !renderer) return
     const geo = await api.setTrack(seed)
+    if (!geo) return // still loading: init will build this track
     renderer.setTrack(geo, false)
     setStatus((s) => ({ ...s, track: geo, crashes: 0, leaderLap: 1 }))
   }, [])
@@ -241,6 +273,10 @@ export function useLiveSim(opts: LiveSimOptions) {
     await apiRef.current?.setDrivers(driver, ghosts)
   }, [])
 
+  const setGovernor = useCallback(async (on: boolean, tau: number) => {
+    await apiRef.current?.setGovernor(on, tau)
+  }, [])
+
   const setCheckpoint = useCallback(async (name: string) => {
     await apiRef.current?.setCheckpoint(name)
   }, [])
@@ -248,11 +284,56 @@ export function useLiveSim(opts: LiveSimOptions) {
   return {
     canvasRef,
     status,
+    telemetry,
     setConditions,
     setTrack,
     control,
     setSpeed,
     setDrivers,
     setCheckpoint,
+    setGovernor,
+  }
+}
+
+function push(arr: number[], v: number): number[] {
+  const out = arr.length >= HISTORY ? arr.slice(arr.length - HISTORY + 1) : arr.slice()
+  out.push(v)
+  return out
+}
+
+/** Focused car = car 0; first ghost = the first car flagged as a ghost. */
+function readTelemetry(snap: Float32Array, prev: Telemetry | null): Telemetry {
+  const n = (snap.length - HEADER) / STRIDE
+  let ghostLast = NaN
+  for (let i = 1; i < n; i++) {
+    const g = HEADER + i * STRIDE
+    if (snap[g + CarField.Flags]! & CarFlag.Ghost) {
+      ghostLast = snap[g + CarField.LastLap]!
+      break
+    }
+  }
+  const f = (k: number) => snap[HEADER + k]!
+  const h = prev?.history ?? { speed: [], muRear: [], muHatRear: [], pCrash: [] }
+  return {
+    kind: DRIVER_KINDS[f(CarField.Driver)] ?? 'scripted',
+    speedMps: f(CarField.Speed),
+    lapTime: f(CarField.LapTime),
+    bestLap: f(CarField.BestLap),
+    lastLap: f(CarField.LastLap),
+    ghostLastLap: ghostLast,
+    muFront: f(CarField.MuFront),
+    muRear: f(CarField.MuRear),
+    muHatFront: f(CarField.MuHatFront),
+    muHatRear: f(CarField.MuHatRear),
+    pCrash: f(CarField.PCrash),
+    steer: f(CarField.Steer),
+    long: f(CarField.Long),
+    crashed: (f(CarField.Flags) & CarFlag.Crashed) !== 0,
+    history: {
+      speed: push(h.speed, f(CarField.Speed)),
+      muRear: push(h.muRear, f(CarField.MuRear)),
+      muHatRear: push(h.muHatRear, f(CarField.MuHatRear)),
+      pCrash: push(h.pCrash, f(CarField.PCrash)),
+    },
   }
 }

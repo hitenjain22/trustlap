@@ -48,6 +48,8 @@ import {
 } from './protocol.ts'
 
 const STEP_MS = 50
+const GOVERNOR_RAMP = 0.2 // same constants as sim/trustlap/confidence.py
+const GOVERNOR_BRAKE = -0.4
 const MAX_CATCH_UP = 4
 const RESPAWN_STEPS = 12 // 0.6 s fade before a crashed car comes back
 const RESPAWN_BACK_M = 30
@@ -63,6 +65,11 @@ interface Driver {
   respawnIn: number // steps left while crashed, 0 = driving
   lapFlag: boolean
   laps: number
+  /** Lap timing (simulation steps) and the last action, for telemetry. */
+  lapStart: number
+  bestLap: number
+  lastLap: number
+  lastAction: Float32Array
   /** Student estimates for telemetry (NaN for other drivers). */
   muHat: Float32Array
   uncertainty: number
@@ -76,10 +83,14 @@ let track: TrackData
 let trackSeed = 0
 let drivers: Driver[] = []
 let shared: Conditions // puddle arrays and condition values shared by every car
+let ready = false // init finished (track built, cars placed)
 let values: ConditionValues
 let opts: SimInit
 let rng = new PCG32(0)
 let speedMultiplier = 1
+let governor = { on: false, tau: 0.2 }
+let pending: Partial<ConditionValues> = {} // changes that arrived before init
+let pendingTrack: number | null = null
 let paused = false
 let simStep = 0
 let crashes = 0
@@ -99,6 +110,7 @@ let noise = new Float32Array(0)
 
 const defaults = (c: SimConfig): ConditionValues => ({
   rain: 0,
+  muDry: c.conditions.mu_dry.nominal,
   puddles: 0,
   windMps: 0,
   windDirDeg: 0,
@@ -115,6 +127,7 @@ const defaults = (c: SimConfig): ConditionValues => ({
 
 /** Copy the UI's condition values into a car's Conditions (puddle arrays are shared). */
 function applyValues(cond: Conditions, d?: Pick<Driver, 'powerScale' | 'massScale'>): void {
+  cond.muDry = Math.fround(values.muDry)
   setRain(cond, values.rain, cfg)
   const dir = (values.windDirDeg * Math.PI) / 180
   cond.windMps[0] = values.windMps * Math.cos(dir)
@@ -248,6 +261,10 @@ function placeCars(): void {
       respawnIn: 0,
       lapFlag: false,
       laps: 0,
+      lapStart: 0,
+      bestLap: NaN,
+      lastLap: NaN,
+      lastAction: new Float32Array(2),
       muHat: new Float32Array([NaN, NaN]),
       uncertainty: NaN,
       ...scales,
@@ -259,6 +276,7 @@ function placeCars(): void {
 
 function respawn(d: Driver): void {
   resetEnvState(d.state, track, d.state.sM - RESPAWN_BACK_M, RESPAWN_SPEED_MPS)
+  d.lapStart = simStep // a crashed lap doesn't count; the next one starts now
 }
 
 /** Standard normals for the sensor-noise slider (AI drivers only); null when noise is off. */
@@ -340,14 +358,29 @@ function step(): void {
       action[0] = b >= 0 ? actBatch[2 * b]! : 0
       action[1] = b >= 0 ? actBatch[2 * b + 1]! : 0
     }
+    if (d.kind === 'student' && governor.on && !Number.isNaN(d.uncertainty)) {
+      // Safety governor: cap the throttle as crash risk rises past τ; brake above τ + 0.2.
+      const p = crashProbability(d.uncertainty)
+      if (p > governor.tau) {
+        const cap = Math.min(1, Math.max(0, 1 - (p - governor.tau) / GOVERNOR_RAMP))
+        action[1] = Math.min(action[1]!, cap)
+        if (p > governor.tau + GOVERNOR_RAMP) action[1] = Math.min(action[1]!, GOVERNOR_BRAKE)
+      }
+    }
     const gusty = d.state.cond.gustSigmaMps > 0
     const gx = gusty ? rng.nextNormal() : 0
     const gy = gusty ? rng.nextNormal() : 0
     coreStep(d.state, action[0]!, action[1]!, gx, gy, track, cfg, info)
+    d.lastAction[0] = d.state.prevAction[0]!
+    d.lastAction[1] = d.state.prevAction[1]!
     if (info.lapCompleted) {
       d.state.progressM -= track.lengthM // keep driving: the next lap starts now
       d.lapFlag = true
       d.laps++
+      // A lap counts from the car's start (or respawn); time it in simulation steps.
+      d.lastLap = ((simStep + 1 - d.lapStart) * STEP_MS) / 1000
+      d.bestLap = Number.isNaN(d.bestLap) ? d.lastLap : Math.min(d.bestLap, d.lastLap)
+      d.lapStart = simStep + 1
     } else if (info.terminated) {
       d.respawnIn = RESPAWN_STEPS
       if (!d.ghost) crashes++
@@ -388,6 +421,11 @@ function snapshot(): Float32Array {
       (d.ghost ? CarFlag.Ghost : 0) |
       (i === 0 ? CarFlag.Focused : 0)
     buf[o + CarField.Driver] = DRIVER_KINDS.indexOf(d.kind)
+    buf[o + CarField.Steer] = d.lastAction[0]!
+    buf[o + CarField.Long] = d.lastAction[1]!
+    buf[o + CarField.LapTime] = ((simStep - d.lapStart) * STEP_MS) / 1000
+    buf[o + CarField.BestLap] = d.bestLap
+    buf[o + CarField.LastLap] = d.lastLap
   })
   return buf
 }
@@ -428,20 +466,35 @@ const api: SimApi = {
     cfg = o.config
     obs = createObservation(cfg)
     rng = new PCG32(o.seed)
-    values = { ...defaults(cfg), ...o.conditions }
+    values = { ...defaults(cfg), ...o.conditions, ...pending }
+    pending = {}
     if (o.autoPuddles) values.puddles = puddlesForRain(values.rain, cfg)
-    await ensurePolicies([o.driver, ...o.ghosts])
-    const geo = buildTrack(o.trackSeed)
+    await ensurePolicies([opts.driver, ...opts.ghosts])
+    // Anything the UI changed while the networks were loading wins over the initial values.
+    values = { ...values, ...pending }
+    pending = {}
+    const geo = buildTrack(pendingTrack ?? o.trackSeed)
+    pendingTrack = null
     placeCars()
+    ready = true
     start()
     return geo
   },
   async setTrack(seed: number) {
+    if (!ready) {
+      pendingTrack = seed // init builds it
+      return null
+    }
     const geo = buildTrack(seed)
     placeCars()
     return geo
   },
   async setConditions(partial) {
+    if (!ready) {
+      // Not initialized yet (the UI can change sliders while artifacts load): remember it.
+      pending = { ...pending, ...partial }
+      return pending.puddles ?? 0
+    }
     values = { ...values, ...partial }
     if (opts.autoPuddles && partial.rain !== undefined) {
       values.puddles = puddlesForRain(values.rain, cfg)
@@ -451,6 +504,10 @@ const api: SimApi = {
     return values.puddles
   },
   async setDrivers(driver, ghosts) {
+    if (!ready) {
+      opts = { ...opts, driver, ghosts } // applied by init
+      return
+    }
     await ensurePolicies([driver, ...ghosts])
     opts = { ...opts, driver, ghosts }
     placeCars()
@@ -462,6 +519,9 @@ const api: SimApi = {
       new ActorPolicy(await loadNetwork(opts.artifactBase, name, 'checkpoints')),
     )
     placeCars()
+  },
+  async setGovernor(on: boolean, tau: number) {
+    governor = { on, tau }
   },
   async reset() {
     placeCars()

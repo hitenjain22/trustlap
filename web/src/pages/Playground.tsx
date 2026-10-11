@@ -1,13 +1,46 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '../components/Button.tsx'
 import { DiceIcon, PlayIcon } from '../components/icons.tsx'
 import { LiveCanvas } from '../components/LiveCanvas.tsx'
+import { TelemetryPanel } from '../components/TelemetryPanel.tsx'
 import { Slider } from '../components/Slider.tsx'
 import { strings } from '../copy/strings.ts'
-import { loadShowcase, loadSimConfig, type ShowcaseTrack } from '../data/artifacts.ts'
+import {
+  loadCalibration,
+  loadShowcase,
+  loadSimConfig,
+  type Calibration,
+  type ShowcaseTrack,
+} from '../data/artifacts.ts'
 import { useLiveSim } from '../hooks/useLiveSim.ts'
+import { parsePlayground, serializePlayground } from '../state/urlState.ts'
 import type { SimConfig } from '../sim/config.ts'
 import type { ConditionValues, DriverKind } from '../worker/protocol.ts'
+
+/** Condition presets (SPEC 10.2); anything a preset doesn't name resets to nominal. */
+const PRESETS = [
+  { id: 'dry', values: {} },
+  { id: 'monsoon', values: { rain: 1, puddles: 8, windMps: 8, gustMps: 2 } },
+  { id: 'ice', values: { muDry: 0.25 } },
+  { id: 'broken', values: { steerTauS: 0.15, delaySteps: 2, obsNoise: 0.05 } },
+  {
+    id: 'chaos',
+    values: {
+      rain: 0.9,
+      puddles: 6,
+      windMps: 10,
+      gustMps: 3,
+      massMult: 1.2,
+      powerMult: 0.8,
+      brakeMult: 0.75,
+      dragAreaM2: 1.3,
+      wearPerKm: 0.2,
+      steerTauS: 0.12,
+      delaySteps: 2,
+      obsNoise: 0.04,
+    },
+  },
+] as const satisfies readonly { id: string; values: Partial<ConditionValues> }[]
 
 const PLAYGROUND_CARS = 1 // the focused car; ghosts are added per driver
 const DRIVER_ORDER: DriverKind[] = ['student', 'blind', 'teacher', 'scripted'] // SPEC 10.2
@@ -46,6 +79,14 @@ function controlsFrom(cfg: SimConfig): Record<'weather' | 'car' | 'electronics',
         ...span(c.rain),
         format: pct,
         spoken: (v) => `${Math.round(v * 100)} percent rain`,
+      },
+      {
+        key: 'muDry',
+        label: 'Road grip (dry)',
+        step: 0.01,
+        ...span(c.mu_dry),
+        format: (v) => `μ ${v.toFixed(2)}`,
+        spoken: (v) => `dry road grip ${v.toFixed(2)}`,
       },
       {
         key: 'puddles',
@@ -150,23 +191,55 @@ function controlsFrom(cfg: SimConfig): Record<'weather' | 'car' | 'electronics',
 
 /** Playground (SPEC 10.2): live canvas, driver + ghosts, condition sliders. Telemetry lands in M5. */
 export default function Playground() {
+  // Shareable state from the URL (SPEC 10.5); defaults when absent.
+  const url = useMemo(() => parsePlayground(window.location.search), [])
   const [cfg, setCfg] = useState<SimConfig | null>(null)
   const [tracks, setTracks] = useState<ShowcaseTrack[]>([])
-  const [seed, setSeed] = useState<number | null>(null)
-  const firstSeed = useMemo(() => loadShowcase().then((t) => t[0]!.seed), [])
+  const [seed, setSeed] = useState<number | null>(
+    url.track && 'seed' in url.track ? url.track.seed : null,
+  )
+  const firstSeed = useMemo(
+    () =>
+      loadShowcase().then((t) => {
+        if (url.track && 'seed' in url.track) return url.track.seed
+        const slug = url.track && 'slug' in url.track ? url.track.slug : null
+        return (t.find((x) => x.slug === slug) ?? t[0]!).seed
+      }),
+    [url],
+  )
   const sim = useLiveSim({
     nCars: PLAYGROUND_CARS,
     trackSeed: firstSeed,
-    conditions: {},
+    conditions: url.values,
     layout: 'grid',
-    driver: 'blind',
-    ghosts: ['scripted'],
+    driver: url.driver ?? 'student',
+    ghosts: url.ghosts ?? ['blind'],
     showFocus: true,
+    telemetry: true,
     intro: false,
     seed: 3,
   })
-  const [driver, setDriver] = useState<DriverKind>('blind')
-  const [ghosts, setGhosts] = useState<DriverKind[]>(['scripted'])
+  const [driver, setDriver] = useState<DriverKind>(url.driver ?? 'student')
+  const [ghosts, setGhosts] = useState<DriverKind[]>(url.ghosts ?? ['blind'])
+  const [calibration, setCalibration] = useState<Calibration | null>(null)
+  const [governorOn, setGovernorOn] = useState(url.governor ?? false)
+  const [tau, setTau] = useState(url.tau ?? 0.2)
+  const [toast, setToast] = useState<string | null>(null)
+  const [showKeys, setShowKeys] = useState(false)
+  useEffect(() => {
+    loadCalibration().then(
+      (c) => {
+        setCalibration(c)
+        if (c && url.tau === null) setTau(c.tau_default)
+      },
+      () => undefined,
+    )
+  }, [url.tau])
+  const applyGovernor = (on: boolean, t: number) => {
+    setGovernorOn(on)
+    setTau(t)
+    void sim.setGovernor(on, t)
+  }
   const available = (d: DriverKind) => sim.status.available.includes(d)
   const pickDriver = (d: DriverKind) => {
     const g = ghosts.filter((x) => x !== d)
@@ -179,9 +252,18 @@ export default function Playground() {
     setGhosts(g)
     void sim.setDrivers(driver, g)
   }
-  const [values, setValues] = useState<Partial<ConditionValues>>({})
+  const [values, setValues] = useState<Partial<ConditionValues>>(url.values)
   const [playing, setPlaying] = useState(true)
-  const [speed, setSpeed] = useState<number>(1)
+  const [speed, setSpeed] = useState<number>(url.speed ?? 1)
+
+  // Once the sim is up, apply URL settings the worker doesn't take at init.
+  const ready = sim.status.phase === 'ready'
+  useEffect(() => {
+    if (!ready) return
+    if (speed !== 1) void sim.setSpeed(speed)
+    if (governorOn) void sim.setGovernor(governorOn, tau)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready])
 
   useEffect(() => {
     loadSimConfig().then(setCfg, () => undefined)
@@ -200,6 +282,7 @@ export default function Playground() {
       cfg
         ? {
             rain: 0,
+            muDry: cfg.conditions.mu_dry.nominal,
             puddles: 0,
             windMps: 0,
             windDirDeg: 0,
@@ -211,6 +294,7 @@ export default function Playground() {
             wearPerKm: cfg.conditions.tire_wear_per_km.nominal,
             steerTauS: cfg.conditions.steer_tau_s.nominal,
             delaySteps: 0,
+            obsNoise: 0,
           }
         : {},
     [cfg],
@@ -219,6 +303,11 @@ export default function Playground() {
   const set = (key: Key, value: number) => {
     setValues((v) => ({ ...v, [key]: value }))
     void sim.setConditions({ [key]: value })
+  }
+  const applyPreset = (preset: (typeof PRESETS)[number]) => {
+    const next = { ...defaults, ...preset.values }
+    setValues(next)
+    void sim.setConditions(next)
   }
   const pickTrack = (s: number) => {
     setSeed(s)
@@ -232,7 +321,68 @@ export default function Playground() {
     setSpeed(s)
     void sim.setSpeed(s)
   }
-  const current = tracks.find((t) => t.seed === seed)
+  // The seed on screen: the user's pick, else whatever the sim started with.
+  const shownSeed = seed ?? sim.status.track?.seed ?? null
+  const current = tracks.find((t) => t.seed === shownSeed)
+
+  // Keep the URL in sync (replaceState, debounced 300 ms).
+  const query = serializePlayground({
+    trackSeed: shownSeed,
+    trackSlug: current?.slug ?? null,
+    values,
+    driver,
+    ghosts,
+    governor: governorOn,
+    tau,
+    speed,
+  })
+  useEffect(() => {
+    const id = setTimeout(
+      () => window.history.replaceState(null, '', `${window.location.pathname}?${query}`),
+      300,
+    )
+    return () => clearTimeout(id)
+  }, [query])
+  const copyLink = async () => {
+    const link = `${window.location.origin}${window.location.pathname}?${query}`
+    try {
+      await navigator.clipboard.writeText(link)
+      setToast(strings.playground.linkCopied)
+    } catch {
+      setToast(strings.playground.linkCopyFailed)
+    }
+    setTimeout(() => setToast(null), 2500)
+  }
+
+  // Keyboard shortcuts (SPEC 10.4), ignored while typing in a form control.
+  const keyHandler = useRef<(e: KeyboardEvent) => void>(() => undefined)
+  useEffect(() => {
+    keyHandler.current = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement
+      if (
+        e.metaKey ||
+        e.ctrlKey ||
+        e.altKey ||
+        el.closest('input, select, textarea, [contenteditable]')
+      )
+        return
+      if (e.key === ' ') {
+        e.preventDefault()
+        togglePlay()
+      } else if (e.key === 'r' || e.key === 'R') void sim.control('reset')
+      else if (e.key === 'n' || e.key === 'N') pickTrack(Math.floor(Math.random() * 2 ** 31))
+      else if (e.key === '?') setShowKeys((v) => !v)
+      else if (/^[1-4]$/.test(e.key)) {
+        const d = DRIVER_ORDER[Number(e.key) - 1]!
+        if (available(d)) pickDriver(d)
+      }
+    }
+  })
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => keyHandler.current(e)
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   return (
     <div className="mx-auto grid max-w-[1920px] gap-0 lg:grid-cols-[1fr_340px]">
@@ -250,15 +400,19 @@ export default function Playground() {
             value={current ? current.seed : ''}
             onChange={(e) => pickTrack(Number(e.currentTarget.value))}
           >
-            {!current && seed !== null && <option value="">{strings.playground.seed(seed)}</option>}
+            {!current && shownSeed !== null && (
+              <option value="">{strings.playground.seed(shownSeed)}</option>
+            )}
             {tracks.map((t) => (
               <option key={t.seed} value={t.seed}>
                 {t.name}
               </option>
             ))}
           </select>
-          {seed !== null && (
-            <span className="numeral text-[14px] text-text-3">{strings.playground.seed(seed)}</span>
+          {shownSeed !== null && (
+            <span className="numeral text-[14px] text-text-3">
+              {strings.playground.seed(shownSeed)}
+            </span>
           )}
           <Button onClick={() => pickTrack(Math.floor(Math.random() * 2 ** 31))}>
             <DiceIcon />
@@ -281,6 +435,37 @@ export default function Playground() {
           <Button variant="ghost" onClick={() => void sim.control('reset')}>
             {strings.playground.restart}
           </Button>
+          <Button variant="ghost" onClick={() => void copyLink()}>
+            {strings.playground.copyLink}
+          </Button>
+          <div className="relative">
+            <Button
+              variant="ghost"
+              aria-expanded={showKeys}
+              aria-label={strings.playground.shortcuts}
+              onClick={() => setShowKeys((v) => !v)}
+            >
+              ?
+            </Button>
+            {showKeys && (
+              <div
+                className="absolute right-0 z-20 mt-2 w-64 rounded-panel border border-line bg-asphalt-800 p-4 text-[13px]"
+                role="dialog"
+                aria-label={strings.playground.shortcuts}
+              >
+                <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
+                  {strings.playground.keys.map(([k, v]) => (
+                    <div key={k} className="contents">
+                      <dt>
+                        <kbd className="rounded border border-line px-1.5 text-paint">{k}</kbd>
+                      </dt>
+                      <dd className="text-text-2">{v}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            )}
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-2 text-[14px] md:px-6">
           <span className="label">{strings.playground.driver}</span>
@@ -321,14 +506,29 @@ export default function Playground() {
           canvasRef={sim.canvasRef}
           phase={sim.status.phase}
           label={strings.playground.canvasLabel}
-          className="aspect-[4/3] w-full lg:aspect-auto lg:h-[calc(100svh-56px-110px)] lg:min-h-[480px]"
+          className="aspect-[4/3] w-full lg:aspect-auto lg:h-[calc(100svh-56px-110px-200px)] lg:min-h-[380px]"
         />
+        <TelemetryPanel t={sim.telemetry} tau={calibration ? tau : null} governorOn={governorOn} />
       </section>
       <aside
         className="border-line bg-asphalt-800 lg:h-[calc(100svh-56px)] lg:overflow-y-auto lg:border-l"
         aria-label="Conditions"
       >
         <p className="px-5 pt-5 text-[14px] text-text-2">{strings.playground.intro}</p>
+        <div className="px-5 pt-4">
+          <p className="label">{strings.playground.presets}</p>
+          <div
+            className="mt-2 flex flex-wrap gap-2"
+            role="group"
+            aria-label={strings.playground.presets}
+          >
+            {PRESETS.map((p) => (
+              <button key={p.id} type="button" className="chip" onClick={() => applyPreset(p)}>
+                {strings.playground.presetNames[p.id]}
+              </button>
+            ))}
+          </div>
+        </div>
         {groups &&
           (['weather', 'car', 'electronics'] as const).map((g, i) => (
             <details key={g} open={i === 0} className="group border-b border-line">
@@ -353,7 +553,45 @@ export default function Playground() {
               </div>
             </details>
           ))}
+        {calibration && (
+          <details className="group border-b border-line">
+            <summary className="cursor-pointer list-none px-5 py-4 text-[16px] font-[620] text-paint">
+              {strings.playground.groups.safety}
+            </summary>
+            <div className="flex flex-col gap-4 px-5 pb-6">
+              <label className="flex items-center justify-between gap-3 text-[14px] text-paint">
+                {strings.playground.governor}
+                <input
+                  type="checkbox"
+                  role="switch"
+                  checked={governorOn}
+                  onChange={(e) => applyGovernor(e.currentTarget.checked, tau)}
+                  className="size-5 accent-[var(--sodium)]"
+                />
+              </label>
+              <Slider
+                label={strings.playground.governorThreshold}
+                value={tau}
+                min={0.05}
+                max={0.5}
+                step={0.05}
+                onChange={(v) => applyGovernor(governorOn, v)}
+                format={(v) => `${Math.round(v * 100)}%`}
+                valueText={(v) => `${Math.round(v * 100)} percent crash risk`}
+              />
+              <p className="text-[13px] text-text-3">{strings.playground.governorNote}</p>
+            </div>
+          </details>
+        )}
       </aside>
+      {toast && (
+        <div
+          role="status"
+          className="fixed bottom-6 left-1/2 z-30 -translate-x-1/2 rounded-panel border border-line bg-asphalt-800 px-4 py-3 text-[14px] text-paint"
+        >
+          {toast}
+        </div>
+      )}
     </div>
   )
 }

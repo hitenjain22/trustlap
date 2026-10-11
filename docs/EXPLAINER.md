@@ -22,3 +22,88 @@ Each component gets: what it does (two sentences), why it's needed, the one equa
 - **Vitest / Playwright / pytest:** unit tests for the web, browser tests that click through the real site, and Python tests.
 - **CI (GitHub Actions):** runs all the tests on every push, so a broken change is caught before it's deployed.
 - **Vercel:** hosts the static site for free.
+
+---
+
+## The random number generator: PCG32 (M1, `rng.py`)
+
+**What it is.** A tiny, well-known algorithm that turns a seed (any whole number) into an endless stream of random-looking numbers. Same seed, same stream, every time.
+
+**Why it's here.** The website has to rebuild exactly the same track from a seed as Python did ("Hairpin Valley is seed 200,017"). Python's and JavaScript's built-in random functions are different algorithms, so we use one we implement ourselves in both languages, bit for bit.
+
+**The one idea.** PCG = a simple "multiply and add" update of a 64-bit number (a linear congruential generator), plus a scrambling step on the output (xorshift + rotate) that hides the weaknesses of the plain update. The Python version uses explicit 64-bit masking so it does exactly what JavaScript's BigInt arithmetic does. The test checks our first six outputs for seed 42 against the published reference.
+
+**What would break without it.** Shared links and showcase tracks wouldn't match between training and the browser.
+
+---
+
+## Procedural tracks (M1, `track.py`)
+
+**What it does.** Makes a random race-track loop from a seed: 8–14 random points around a circle, some pulled inward to make hairpins, joined by a smooth curve, then checked for problems.
+
+**Why it's built this way.**
+- Points are placed at increasing angles around the center, so the rough shape can't cross itself.
+- The smooth curve is a **centripetal Catmull–Rom spline**: it passes through every point and never makes loops or cusps (the "centripetal" version is the one proven not to).
+- The curve is re-sampled every ~2 m, so "index i" means "about 2i meters along the track". For each point we store the direction of travel (tangent), the direction to the left (normal) and how sharply it turns (curvature: 1 / turning radius).
+- **Validation** rejects tracks that are the wrong length, have a corner tighter than 18 m radius, have two parts that come too close ("pinch"), or whose edges cross.
+
+**A problem we hit, and the fix.** With the spec's settings, 82% of random tracks had a corner tighter than 18 m, so most seeds needed several retries. The spec already had a fix for hand-drawn tracks, "Auto-fix": nudge each point toward the average of its neighbours (Laplacian smoothing), a few times, until the tight corner opens up. We now apply the same fix to generated tracks: 93% pass on the first try, and they keep their hairpins (90% still have a corner under 30 m).
+
+**Track banks.** 2,000 training tracks, 100 validation tracks (for choosing settings and models) and 200 test tracks (only for final results, never for tuning). Keeping the test tracks unseen is what makes "it works on tracks it never saw" an honest claim.
+
+---
+
+## The car physics (M1, `dynamics.py`)
+
+**What it is.** A **dynamic bicycle model**: the car is treated as one front wheel and one rear wheel (each standing for an axle), with a body that can slide sideways and rotate. Every 12.5 ms we add up the forces on the car and update its speed, sideways speed, rotation and position. Four of these "substeps" make one 50 ms control step, which is when the driver (AI or scripted) makes a decision.
+
+**The forces, in plain words.**
+- **Tires** are where all the interesting behaviour lives. When a tire rolls in a slightly different direction than it points, it pushes sideways. That angle is the **slip angle**. Small slip gives a sideways force proportional to the slip; large slip saturates at the grip limit. The **Pacejka "magic formula"** is the standard curve for this: `F = −μ · load · sin(C · atan(B·α − E·(B·α − atan(B·α))))`.
+- **μ (grip)** multiplies everything. Rain lowers it, puddles lower it locally under one axle, worn tires lower it over the lap. That is why the AI has something to "feel".
+- **Friction ellipse:** a tire has one grip budget, shared between accelerating/braking and turning. Use 80% of it to accelerate and only 60% is left for turning (`sqrt(1 − 0.8²)`).
+- **Engine:** rear-wheel drive, power-limited (force = power / speed). **Brakes:** 60% front, 40% rear.
+- **Air drag** grows with speed squared, and **wind** changes the air speed the car feels. Sideways wind pushes behind the center of gravity, so the car turns its nose into the wind like a weathervane (this surprised a test, and it's correct physics).
+- **Steering lag** (the wheel takes time to turn) and **action delay** (commands arrive 0–4 steps late) model a laggy car.
+- **Low-speed blending:** the tire formula divides by speed, which explodes near zero. Below 3 m/s we blend toward simple geometric ("kinematic") steering, where the car just follows its wheels.
+
+**How we know it's right.** Ten sanity tests compare it with physics you can check by hand. Top speed matches the analytic value exactly (72.66 m/s). Dry braking from 30 m/s takes 40.6 m against v²/2μg = 42.5 m (air drag helps a little). Slow turns match the geometric radius. A puddle under the rear makes the car rotate more (oversteer), and under the front it rotates less (understeer). 10,000 random steps with every condition at its extreme stay finite. Running 4,096 cars at once gives the same answer as one at a time.
+
+**One finding worth knowing for interviews.** With the spec's constants the car is almost exactly **neutral-steer**: front and rear tires lose grip at the same moment. It's also rear-wheel drive. So throttle in a corner uses up the rear tires' grip budget and the tail slides out (**power oversteer**). Coasting, the car is stable even past the limit. That makes throttle control part of what the AI must learn, especially in the rain.
+
+---
+
+## The environment (M1, `env.py`, `conditions.py`)
+
+**What it is.** The "game" wrapped around the physics: where the car is on the track, what the driver gets to see, how it's scored, and when an episode ends.
+
+- **Progress tracking.** Each step, find the nearest centerline point, but only search a window near where the car was last time (5 points back to 25 ahead). Without the window, a car near a hairpin could "teleport" its progress to the other side of the hairpin. Progress is the change in distance along the track, clipped to ±5 m per step.
+- **Observations** (what the AI sees, in the car's own frame, scaled to about −1…1). 33 numbers for every driver: speed, sideways speed, rotation rate, steering angle, last action, distance from the center line, heading error, 12 points of the road ahead, and the track width. 14 "privileged" numbers that only the teacher and the training critic get: the true grip under each axle, puddles ahead, mass, wind and so on. A 1-second history (20 steps × 10 numbers) for the student.
+- **Reward:** about 0.1 per meter of progress (so faster is better), small penalties for being off-center and for jerky inputs, +10 for finishing a lap, −10 for crashing.
+- **Episodes end** on: off track, spinning for over 1 s, stalling for 3 s, driving the wrong way, finishing the lap (all "terminated": nothing comes after), or the 120 s time limit ("truncated": the future still had value, so training will estimate it instead of assuming zero). That difference matters for PPO in M3.
+- **Conditions** are sampled per episode: rain, base grip, puddles, wind and gusts, tire wear, mass, power, brakes, drag, steering lag, delay, sensor noise. A **difficulty** number from 0 to 1 widens every range from "perfect day" to "full chaos" (the curriculum, M3).
+- **Auto-reset:** when a car's episode ends, it immediately starts a new one on a new track. All cars always step together, which is what keeps the GPU busy.
+
+---
+
+## The scripted driver (M1, `scripted.py`)
+
+**What it is.** A hand-written, non-learning driver that **knows the true grip**: a strong baseline, roughly a competent human with perfect road knowledge.
+
+- **Steering: pure pursuit.** Pick a point on the center line ~1 s ahead and steer along the arc that hits it. Plus **yaw damping**: if the car is rotating faster than that arc needs, countersteer.
+- **Speed plan:** for every point up to 160 m ahead, the fastest a corner allows is `sqrt(grip · g / curvature)`. Work backwards with a safe braking rate to get the speed allowed *now*.
+- **Pedals:** ask for an acceleration proportional to the speed error, then convert it to throttle or brake using the car's real force limits. Throttle and brakes may only use the grip that cornering leaves free (the friction ellipse again: traction control and ABS).
+
+**The debugging story (good interview material).** The first version crashed on every lap. Tracing one car showed: (1) it accelerated hard mid-corner and power-oversteered, so I made the pedals friction-circle aware; (2) the steering oscillated, because pure pursuit aimed only 7.7 m ahead, and each correction overshot more than the last until the car spun on a gentle curve, so I used a longer lookahead plus yaw damping; (3) it arrived at corners too fast because it braked too gently, so I planned with a conservative braking rate and a firmer speed controller; (4) the pedals then chattered between full brake and full throttle 20 times a second, because the controller's gain was in the wrong units, so I made it request an acceleration in m/s². Each fix came from looking at a trace, not from guessing. Result: 100% of dry laps and 99.1% of wet laps on 2,000 training tracks.
+
+---
+
+## The benchmark (M1, `bench.py`)
+
+**What it measures.** How many car-steps per second the environment runs: on the GPU (JAX), on the CPU (JAX), and as a plain Python loop over cars (NumPy), using literally the same physics code for all three.
+
+**Why JAX is fast here: three words.**
+- `vmap`: write the code for one car; JAX turns it into code for 65,536 cars at once.
+- `jit`: compile the whole step into one optimized GPU program instead of thousands of small operations.
+- `lax.scan`: run 100 steps in a loop *on the GPU*, without coming back to Python between steps.
+
+The Python loop is only measured up to 1,024 cars (the spec forbids extrapolating), so the speedup claim uses measured points only.

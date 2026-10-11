@@ -48,9 +48,30 @@ One-time setup (needs Hiten's accounts):
 
 Without GitHub, from the terminal: `npx vercel` inside `web/` (log in when prompted), then `npx vercel --prod`.
 
+## Simulator tools (M1)
+
+All from `sim/` with the venv active. Outputs go to `sim/runs/` (gitignored).
+
+```bash
+python -m trustlap.track --out runs/banks              # train/validation/test banks (~80 s, 4 cores)
+python scripts/eval_scripted.py --bank runs/banks/validation.npz --seeds 3   # scripted lap completion
+python scripts/debug_plot.py --track-seed 200000 --rain 0.8 --out runs/debug_lap.png   # one lap: PNG + CSV
+python -m trustlap.bench --out runs/bench.json         # throughput (GPU rows only on a GPU machine)
+```
+
+## GPU benchmark on Colab (M1)
+
+1. Open https://colab.research.google.com → **File → Open notebook → GitHub** tab → paste `hitenjain22/trustlap` → pick `sim/notebooks/bench_colab.ipynb`.
+2. **Runtime → Change runtime type → T4 GPU → Save.**
+3. **Runtime → Run all.** If Colab warns the notebook isn't from Google, click **Run anyway**.
+4. Wait ~10–15 min. The last cell downloads `bench.json` to your computer.
+5. Put the file at `sim/runs/bench.json` (or hand it to Claude Code), and paste the output of cell 3 (package versions) into the "Known-good Colab versions" list below.
+
+Known-good Colab versions: *(fill in after the first run)*
+
 ## Training (Colab / Kaggle)
 
-Filled in from M1 (benchmark) and M3 onward.
+Filled in from M3 onward.
 
 ## Evaluation and export
 

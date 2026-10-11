@@ -5,6 +5,11 @@
  */
 import { z } from 'zod'
 
+// Every schema here parses a handful of small files once; zod's JIT (it compiles a fast path
+// per object schema on first parse) costs more than it saves and lands in the load-time long
+// tasks. Global setting, so it covers every schema in the app and the worker.
+z.config({ jitless: true })
+
 const num = z.number()
 const int = z.number().int()
 const range = z.object({ nominal: num, lo: num, hi: num, ood: num })

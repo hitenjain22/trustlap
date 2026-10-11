@@ -97,3 +97,5 @@ Golden fixtures live in `web/tests/parity/golden/` rather than `web/public/artif
 4. Load-time long tasks on retina.
 
 Status 2026-10-11 14:30: items 1–3 done (draw-a-track in `web/src/components/TrackDrawer.tsx`, geometry in `web/src/sim/track.ts`); item 4 next.
+
+Status 2026-10-11 15:20: item 4 investigated; see DECISIONS ("Load-time long tasks"). M7 follow-ups 1–4 closed.

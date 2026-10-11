@@ -1,0 +1,40 @@
+/* Design tokens (SPEC 11.2). "Wet asphalt at night under sodium lamps." Dark only for v1. */
+:root {
+  color-scheme: dark;
+  /* surfaces */
+  --asphalt: #1c2127; /* page background */
+  --asphalt-800: #252b33; /* panels, nav, control rail */
+  --asphalt-700: #2f3640; /* hover, raised, chart gridlines */
+  --line: #3a424d; /* hairline borders, dividers */
+  --runoff: #181c21; /* off-track area on canvas */
+  --track: #2a3038; /* track surface on canvas */
+  /* text */
+  --paint: #e9edf0; /* primary text, track edge paint (13.8:1 on asphalt) */
+  --text-2: #aeb7bf; /* secondary (8.0:1) */
+  --text-3: #8a949d; /* muted, ≥ 4.5:1 on asphalt and panels */
+  /* accent */
+  --sodium: #f2b544; /* UI accent: primary buttons, links, focus ring (8.9:1) */
+  --sodium-ink: #1c2127; /* text on sodium */
+  /* data: drivers (validated set, see SPEC 11.3) */
+  --drv-student: #c98500;
+  --drv-teacher: #9085e9;
+  --drv-blind: #d55181;
+  --drv-scripted: #8a949d; /* neutral, always dashed */
+  /* sequential: grip / water (single hue, light → dark) */
+  --grip-1: #dcebf7;
+  --grip-2: #a9cdeb;
+  --grip-3: #6fa9da;
+  --grip-4: #3f7fbf;
+  --grip-5: #285a8f;
+  --rain: #9fc5e8; /* rain streaks (decorative, low opacity) */
+  /* scenery only, never data */
+  --kerb-red: #c8463c;
+  /* status (reserved; always with icon + text) */
+  --status-critical: #e5534b;
+  --status-good: #3fae6a;
+
+  /* motion (SPEC 11.8) */
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --dur-press: 120ms;
+  --dur-panel: 200ms;
+}

@@ -1,0 +1,39 @@
+# OS / editors
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+build/
+
+# Training outputs (never commit; artifacts go through export.py into web/public/artifacts/)
+runs/
+*.msgpack
+*.npz
+!sim/tests/fixtures/**/*.npz
+
+# Node / web
+node_modules/
+dist/
+web/test-results/
+web/playwright-report/
+web/blob-report/
+web/playwright/.cache/
+*.tsbuildinfo
+.vercel
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log

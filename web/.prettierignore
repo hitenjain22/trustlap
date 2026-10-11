@@ -3,3 +3,4 @@ playwright-report
 test-results
 public/artifacts
 package-lock.json
+tests/parity/golden

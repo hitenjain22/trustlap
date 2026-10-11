@@ -73,6 +73,17 @@ Known-good Colab setup: Tesla T4 (15 GB), Colab's preinstalled JAX **0.11.1** wi
 
 Filled in from M3 onward.
 
-## Evaluation and export
+## Export to the website (M2)
 
-Filled in from M2 (export v0) and M6 (evaluation).
+From `sim/` with the venv active:
+
+```bash
+python -m trustlap.export            # web/public/artifacts/v1/: config, showcase tracks, bench, manifest
+python -m trustlap.export --golden   # also regenerate the parity fixtures in web/tests/parity/golden/
+```
+
+Run `--golden` after **any** change to physics, tracks, observations, reward, episode rules or the scripted driver; `sim/tests/test_export.py` fails until you do. Then run `npm test` in `web/` to confirm the TypeScript port still matches.
+
+## Evaluation
+
+Filled in at M6.

@@ -1,0 +1,29 @@
+{
+ "schema_version": 1,
+ "artifact_version": "v1",
+ "created_utc": "2026-10-11T09:27:58+00:00",
+ "git_sha": "7c03609",
+ "config_hash": "f832929f904b4565fe22441782b828b914233cbffa3adff08bcc9ec7c86732b7",
+ "files": [
+  {
+   "path": ".gitkeep",
+   "bytes": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "path": "bench.json",
+   "bytes": 1629,
+   "sha256": "e056793af65c6b12c6fc5dc08c1efb1ca8b367b763a4cc5ebc14cb566d9f5aa7"
+  },
+  {
+   "path": "config.json",
+   "bytes": 6943,
+   "sha256": "5319d243d08680ce42880110c5b391b9c066ac2f63ed877bd7a9960e1e2e17b7"
+  },
+  {
+   "path": "tracks/showcase.json",
+   "bytes": 4046,
+   "sha256": "406ba6bf4d7c783e5752036ef0fd0f85d8c453ce47dc9ba3357fada076b0d30b"
+  }
+ ]
+}

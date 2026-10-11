@@ -107,3 +107,33 @@ Each component gets: what it does (two sentences), why it's needed, the one equa
 - `lax.scan`: run 100 steps in a loop *on the GPU*, without coming back to Python between steps.
 
 The Python loop is only measured up to 1,024 cars (the spec forbids extrapolating), so the speedup claim uses measured points only.
+
+---
+
+## The browser port and parity tests (M2, `web/src/sim/`, `web/tests/parity/`)
+
+**What it is.** The tracks, physics, environment and scripted driver rewritten in TypeScript, line by line from the Python, so the website can run the very same simulation the AI trains in.
+
+**Why it's needed.** A trained driver only works in the world it learned in. If the browser's car turned 1% differently, the AI would make mistakes that never happened in training, and nobody could tell why.
+
+**How we prove they match ("parity tests").** Python computes thousands of random test cases: random cars, conditions and actions, plus the result after one step. These are saved as "golden" files. The TypeScript code replays every case and must land within 0.0001 (plus 0.01% relative) of Python. Measured: the worst of 2,000 physics cases uses **1.4% of that allowance**. A deliberately planted 1% change to rolling resistance makes the test fail, so the check is sensitive. Track generation matches to a millionth of a meter, and the random number generator matches bit for bit.
+
+**The float32 trick.** Python/JAX computes in 32-bit floats; JavaScript computes in 64-bit. So after every 12.5 ms substep, the TypeScript rounds each state variable to 32 bits (`Math.fround`). Without that, tiny differences compound over thousands of steps.
+
+**The guard.** If anyone changes the physics constants without regenerating the golden files, a Python test fails in CI and says which command to run.
+
+---
+
+## Running it live: worker, fixed timestep, interpolation (M2, `web/src/worker/`, `web/src/render/`)
+
+**Web Worker.** The simulation runs on a separate browser thread, so heavy work never freezes scrolling or clicks.
+
+**Fixed timestep.** The physics always steps exactly 20 times per simulated second, however fast the screen refreshes. The worker adds up elapsed time and takes as many 50 ms steps as fit (at most 4 at once, so a laggy moment can't snowball, the "spiral of death").
+
+**Interpolation.** The screen refreshes 60+ times a second but physics only updates 20 times. So each frame blends between the last two physics snapshots: positions linearly, angles along the shorter way around the circle. That's why motion looks smooth.
+
+**Rendering.** A 2D canvas, drawn in layers: textured runoff, track, kerbs, start line, puddles with ripples, skid marks, cars, headlights in the rain, and rain streaks blown by the wind. Things that rarely change are drawn once into a hidden canvas and copied each frame.
+
+**A performance lesson.** The hero text panel had a slight blur of the canvas behind it. The browser has to re-blur that area every single frame because the canvas keeps changing, which cut the frame rate from 60 to 36 on a high-resolution screen. Removing one CSS property fixed it. Measure before guessing: the rain particles, which looked like the obvious suspect, weren't the problem.
+
+**Results.** 60 fps with 48 cars, even on a retina-resolution canvas at full rain, with no main-thread task over 50 ms. Lighthouse (desktop): 100 performance, 100 accessibility, 100 best practices, 100 SEO.

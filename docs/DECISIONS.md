@@ -58,3 +58,23 @@ Implementation choices:
 - **Headline speedup definition.** "GPU vs CPU" compares the *same compiled JAX code* on the T4 and on the same Colab machine's CPU (2 vCPUs) at the same car count; the NumPy loop row is reported separately as the "naive Python" baseline and only at sizes we measured (≤ 1,024 cars). Stated alongside the number wherever it appears, because a laptop CPU is ~4× faster than Colab's (131k vs 28k steps/s).
 - **`sim/results/`** (committed) holds small result files from GPU runs, such as `bench_t4.json`; `export.py` copies them into the web artifacts.
 - **`rollout.py`** (new module): one-lap-per-car evaluation with no auto-reset, shared by the scripted check now and `evaluate.py` in M6.
+
+### 2026-10-11 (M2)
+
+- **Golden fixtures live in `web/tests/parity/golden/`, not `web/public/artifacts/v1/golden/`** (SPEC 9.1). They're test data: no reason to deploy 6.7 MB of fixtures or count them against the artifact budget.
+- **Three extra fixtures** beyond SPEC 9.4: `env_step` (progress, reward, termination flags), `scripted` (actions) and `scripted_closed_loop` (10 runs × 400 steps). The browser runs the env and the scripted driver from M2 on, so they get the same guarantee as the physics. Env fixtures carry a random history only for the first 32 cases (the rest are zeros) to keep the files small.
+- **Stale-fixture guard.** `config.physics_hash()` covers every section the browser reproduces; fixtures record it and `sim/tests/test_export.py` fails if the physics changed without `python -m trustlap.export --golden`. This enforces SPEC rule 2 in CI.
+- **Interim hero copy.** In M2 the cars run the hand-written scripted driver, so the spec's headline ("These cars taught themselves…") would be false. The hero says what is true now ("Watch 48 cars race through the rain, live in your browser"; body names the scripted driver). Swap in the final copy when trained drivers run in the hero (M3/M5). Story steps 2–5 are marked "In progress" and written in the future tense.
+- **Display type size in the hero is `clamp(34px, 3.4vw, 52px)`** instead of SPEC 11.4's `clamp(44, 6vw, 76)`: at 76 px the headline didn't fit the 560 px text panel on a 720 px-tall laptop screen. Weight, width axis, leading and tracking are as specified.
+- **Cars are drawn at least 13 CSS px long.** At whole-track zoom a 4.4 m car is 3–5 px and reads as a dashed line. Purely visual, like the dots on a broadcast track map; physics is unchanged.
+- **No backdrop blur behind the hero text.** A `backdrop-filter` over an animating canvas has to be recomputed every frame; removing it took the retina hero from 36 to 60 fps in the measurement. The panel uses a solid `--asphalt` at 80% instead (SPEC 14.5 asks for 70%; the extra 10% keeps contrast now that nothing blurs the rain behind it).
+- **The hero picks its showcase track by shape**: the export records each track's bounding-box aspect ratio, and the page chooses the one that best fits the free screen area (landscape laptop vs portrait phone).
+- **Browser puddles belong to the track.** Their layout is seeded per track and shared by every car (they're drawn once); the rain level decides how many are wet (`round(R · 8 · 0.75)`, the training mean). Training still samples puddles per episode.
+- **Browser driving is continuous.** Laps roll over, a crashed car fades for 0.6 s and respawns 30 m back on the centerline, and there is no time limit. Each scripted car gets a slightly different style (grip use ×0.86–1.0, braking ×0.85–1.05, lookahead ×0.9–1.15) so the field spreads out instead of driving in lockstep.
+- **Snapshot buffers ping-pong** between worker and main thread (transferred both ways) so the worker doesn't allocate a new array every tick.
+- **One cached background per frame**: static layers + wet sheen + skid marks are composed into one offscreen canvas, rebuilt when the track, size or rain changes (and every 60 s, which also clears old skid marks). Kerbs are batched into one path per color. Together with the blur fix this took Lighthouse performance from 91 to 100.
+- **Kerbs sit on the inside of corners** (apex kerbs), where SPEC 11.7 leaves the side open.
+- **The nav only lists pages that exist.** Training lab, Results and How it works join it when they're built.
+- **Tests get their own `tsconfig.test.json`** (adds Node types for reading fixtures); app code still compiles without Node types.
+- **No frontend design skill was available** in this environment (SPEC 0 asks to load one if present); the UI follows SPEC 11 directly.
+- **Benchmark CPU sizes** keep 65,536 cars (with fewer fused steps for big CPU batches) so the GPU/CPU headline always compares like for like at the largest size.

@@ -1,0 +1,416 @@
+{
+ "time": {
+  "control_dt_s": 0.05,
+  "substeps": 4,
+  "physics_dt_s": 0.0125
+ },
+ "track": {
+  "ds_target_m": 2.0,
+  "n_max": 2048,
+  "n_ctrl_min": 8,
+  "n_ctrl_max": 14,
+  "angle_jitter": 0.35,
+  "radius_min_m": 110.0,
+  "radius_max_m": 260.0,
+  "pull_prob": 0.3,
+  "pull_min": 0.15,
+  "pull_max": 0.4,
+  "catmull_rom_alpha": 0.5,
+  "samples_per_segment": 64,
+  "curvature_smooth_window": 5,
+  "width_min_m": 11.0,
+  "width_max_m": 14.0,
+  "length_min_m": 900.0,
+  "length_max_m": 2600.0,
+  "min_radius_m": 18.0,
+  "validate_stride": 4,
+  "clearance_index_gap": 40,
+  "clearance_extra_m": 8.0,
+  "max_attempts": 50,
+  "autofix_lambda": 0.3,
+  "autofix_max_iters": 10
+ },
+ "banks": {
+  "train": [
+   0,
+   2000
+  ],
+  "validation": [
+   100000,
+   100100
+  ],
+  "test": [
+   200000,
+   200200
+  ],
+  "showcase_count": 24
+ },
+ "car": {
+  "mass_kg": 800.0,
+  "yaw_inertia_kgm2": 1100.0,
+  "lf_m": 1.2,
+  "lr_m": 1.4,
+  "gravity_mps2": 9.81,
+  "steer_max_rad": 0.42,
+  "steer_rate_max_radps": 3.0,
+  "power_w": 220000.0,
+  "drive_force_max_n": 7000.0,
+  "brake_force_max_g": 1.3,
+  "brake_front_frac": 0.6,
+  "air_density_kgpm3": 1.225,
+  "side_area_coef_m2": 2.5,
+  "center_of_pressure_offset_m": 0.2,
+  "tire_b": 9.0,
+  "tire_c": 1.6,
+  "tire_e": 0.95,
+  "min_slip_speed_mps": 0.5,
+  "brake_min_speed_mps": 0.05,
+  "low_speed_blend_start_mps": 1.0,
+  "low_speed_blend_width_mps": 2.0,
+  "rolling_tanh_speed_mps": 0.5,
+  "body_length_m": 4.4,
+  "body_width_m": 1.9,
+  "wheelbase_m": 2.5999999999999996
+ },
+ "conditions": {
+  "rain": {
+   "nominal": 0.0,
+   "lo": 0.0,
+   "hi": 1.0,
+   "ood": 1.0
+  },
+  "mu_dry": {
+   "nominal": 1.08,
+   "lo": 1.0,
+   "hi": 1.15,
+   "ood": 0.25
+  },
+  "mass_mult": {
+   "nominal": 1.0,
+   "lo": 0.85,
+   "hi": 1.25,
+   "ood": 1.5
+  },
+  "drag_area_m2": {
+   "nominal": 0.9,
+   "lo": 0.6,
+   "hi": 1.4,
+   "ood": 1.8
+  },
+  "rolling_coef": {
+   "nominal": 0.015,
+   "lo": 0.01,
+   "hi": 0.02,
+   "ood": 0.03
+  },
+  "power_mult": {
+   "nominal": 1.0,
+   "lo": 0.75,
+   "hi": 1.15,
+   "ood": 0.6
+  },
+  "brake_mult": {
+   "nominal": 1.0,
+   "lo": 0.7,
+   "hi": 1.1,
+   "ood": 0.5
+  },
+  "steer_tau_s": {
+   "nominal": 0.05,
+   "lo": 0.02,
+   "hi": 0.15,
+   "ood": 0.25
+  },
+  "obs_noise": {
+   "nominal": 0.0,
+   "lo": 0.0,
+   "hi": 0.05,
+   "ood": 0.15
+  },
+  "wind_speed_mps": {
+   "nominal": 0.0,
+   "lo": 0.0,
+   "hi": 10.0,
+   "ood": 15.0
+  },
+  "gust_sigma_mps": {
+   "nominal": 0.0,
+   "lo": 0.0,
+   "hi": 3.0,
+   "ood": 5.0
+  },
+  "tire_wear_per_km": {
+   "nominal": 0.0,
+   "lo": 0.0,
+   "hi": 0.25,
+   "ood": 0.5
+  },
+  "delay_max_steps": 2,
+  "delay_ood_steps": 4,
+  "delay_buffer_len": 4,
+  "rain_grip_drop": 0.45,
+  "puddle_slots": 8,
+  "puddles_per_rain": 8.0,
+  "puddle_count_jitter_min": 0.5,
+  "puddle_mult_min": 0.35,
+  "puddle_mult_max": 0.6,
+  "puddle_mult_ood": 0.25,
+  "puddle_radius_min_m": 4.0,
+  "puddle_radius_max_m": 10.0,
+  "puddle_start_margin_m": 100.0,
+  "puddle_end_margin_m": 50.0,
+  "puddle_lateral_frac": 0.35,
+  "tire_grip_floor": 0.6,
+  "gust_theta_per_s": 0.5
+ },
+ "obs": {
+  "lookahead_m": [
+   5,
+   10,
+   15,
+   20,
+   30,
+   40,
+   55,
+   70,
+   90,
+   110,
+   135,
+   160
+  ],
+  "vx_scale_mps": 30.0,
+  "vy_scale_mps": 10.0,
+  "yaw_rate_scale_radps": 2.0,
+  "lookahead_scale_m": 100.0,
+  "width_scale_m": 14.0,
+  "wind_scale_mps": 10.0,
+  "puddle_ahead_m": [
+   0.0,
+   10.0,
+   20.0,
+   30.0
+  ],
+  "history_len": 20,
+  "proprio_size": 8,
+  "policy_size": 33,
+  "privileged_size": 14,
+  "history_size": 200,
+  "history_row_size": 10,
+  "privileged_center": [
+   0.6327499999999999,
+   0.6327499999999999,
+   0.6327499999999999,
+   0.8,
+   0.675,
+   1.05,
+   1.0,
+   0.015,
+   0.95,
+   0.9,
+   0.08499999999999999,
+   0.0,
+   0.0,
+   0.0
+  ],
+  "privileged_half_range": [
+   0.51725,
+   0.51725,
+   0.51725,
+   0.2,
+   0.325,
+   0.2,
+   0.39999999999999997,
+   0.005,
+   0.19999999999999996,
+   0.20000000000000007,
+   0.065,
+   4.0,
+   10.0,
+   10.0
+  ]
+ },
+ "reward": {
+  "progress_per_m": 0.1,
+  "center": 0.02,
+  "smooth": 0.01,
+  "lap_bonus": 10.0,
+  "crash_penalty": 10.0,
+  "stall_penalty": 2.0
+ },
+ "episode": {
+  "max_steps": 2400,
+  "offtrack_margin_m": 1.0,
+  "spin_angle_rad": 1.7453292519943295,
+  "spin_time_s": 1.0,
+  "stall_speed_mps": 1.0,
+  "stall_time_s": 3.0,
+  "wrong_way_m": 15.0,
+  "search_back": 5,
+  "search_ahead": 25,
+  "delta_s_clip_m": 5.0,
+  "train_speed_min_mps": 5.0,
+  "train_speed_max_mps": 20.0,
+  "eval_speed_mps": 5.0
+ },
+ "scripted": {
+  "lookahead_min_m": 8.0,
+  "lookahead_max_m": 40.0,
+  "lookahead_time_s": 1.0,
+  "yaw_damping_s": 0.1,
+  "grip_use": 0.85,
+  "brake_use": 0.45,
+  "profile_horizon_m": 160.0,
+  "profile_step_m": 4.0,
+  "speed_gain": 3.0,
+  "traction_use": 0.8,
+  "max_speed_mps": 75.0
+ },
+ "network": {
+  "hidden": [
+   128,
+   128,
+   128
+  ],
+  "latent_size": 8,
+  "encoder_hidden": [
+   64
+  ],
+  "adaptation_hidden": [
+   256,
+   128
+  ],
+  "grip_scale": 1.3,
+  "log_std_init": -0.5
+ },
+ "ppo": {
+  "envs_per_agent": 1024,
+  "rollout_len": 64,
+  "minibatches": 8,
+  "update_epochs": 4,
+  "gamma": 0.99,
+  "gae_lambda": 0.95,
+  "clip_eps": 0.2,
+  "ent_coef": 0.003,
+  "vf_coef": 0.5,
+  "lr": 0.0003,
+  "max_grad_norm": 0.5
+ },
+ "pbt": {
+  "population": 16,
+  "ready_interval_updates": 25,
+  "truncation_frac": 0.25,
+  "perturb_factors": [
+   0.8,
+   1.25
+  ],
+  "resample_prob": 0.25,
+  "lr_range": [
+   0.0001,
+   0.001
+  ],
+  "ent_range": [
+   0.0001,
+   0.01
+  ]
+ },
+ "curriculum": {
+  "check_interval_updates": 10,
+  "up_threshold": 0.8,
+  "down_threshold": 0.5,
+  "step": 0.05,
+  "consecutive_up": 2,
+  "easy_frac": 0.2,
+  "boundary_frac": 0.1
+ },
+ "student": {
+  "lr": 0.0003,
+  "grad_steps_per_rollout": 4,
+  "rollout_len": 32,
+  "grip_loss_weight": 0.5,
+  "warm_start_frac": 0.1
+ },
+ "ensemble": {
+  "members": 5,
+  "crash_horizon_s": 2.0,
+  "governor_taus": [
+   0.05,
+   0.1,
+   0.15,
+   0.2,
+   0.3,
+   0.4,
+   0.5
+  ]
+ },
+ "web": {
+  "hero_cars": 48,
+  "playground_cars_max": 5,
+  "lab_cars": 16,
+  "mobile_cars_max": 16
+ },
+ "obs_layout": {
+  "policy": [
+   "vx",
+   "vy",
+   "yaw_rate",
+   "steer",
+   "prev_a_steer",
+   "prev_a_long",
+   "e_y",
+   "e_psi",
+   "look_5m_x",
+   "look_5m_y",
+   "look_10m_x",
+   "look_10m_y",
+   "look_15m_x",
+   "look_15m_y",
+   "look_20m_x",
+   "look_20m_y",
+   "look_30m_x",
+   "look_30m_y",
+   "look_40m_x",
+   "look_40m_y",
+   "look_55m_x",
+   "look_55m_y",
+   "look_70m_x",
+   "look_70m_y",
+   "look_90m_x",
+   "look_90m_y",
+   "look_110m_x",
+   "look_110m_y",
+   "look_135m_x",
+   "look_135m_y",
+   "look_160m_x",
+   "look_160m_y",
+   "width"
+  ],
+  "privileged": [
+   "mu_front",
+   "mu_rear",
+   "mu_base",
+   "mu_tire",
+   "puddle_min_ahead",
+   "mass_mult",
+   "drag_area",
+   "rolling_coef",
+   "power_mult",
+   "brake_mult",
+   "steer_tau",
+   "delay",
+   "wind_body_x",
+   "wind_body_y"
+  ],
+  "history_row": [
+   "vx",
+   "vy",
+   "yaw_rate",
+   "steer",
+   "prev_a_steer",
+   "prev_a_long",
+   "e_y",
+   "e_psi",
+   "a_steer",
+   "a_long"
+  ]
+ }
+}

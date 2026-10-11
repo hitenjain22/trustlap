@@ -22,6 +22,11 @@ export default defineConfig(
     },
   },
   {
+    // The route table defines lazy page components next to the router export; hot reload is irrelevant here.
+    files: ['src/routes.tsx'],
+    rules: { 'react-refresh/only-export-components': 'off' },
+  },
+  {
     files: ['*.config.ts', 'tests/e2e/**/*.ts'],
     languageOptions: { globals: globals.node },
   },

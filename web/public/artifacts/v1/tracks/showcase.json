@@ -1,0 +1,220 @@
+{
+ "tracks": [
+  {
+   "seed": 200189,
+   "name": "Hairpin Valley",
+   "slug": "hairpin-valley",
+   "length_m": 1155.5,
+   "width_m": 12.28,
+   "min_radius_m": 20.1,
+   "aspect": 0.611
+  },
+  {
+   "seed": 200046,
+   "name": "Corkscrew Gap",
+   "slug": "corkscrew-gap",
+   "length_m": 921.8,
+   "width_m": 11.76,
+   "min_radius_m": 19.5,
+   "aspect": 0.881
+  },
+  {
+   "seed": 200100,
+   "name": "Switchback Ridge",
+   "slug": "switchback-ridge",
+   "length_m": 1228.4,
+   "width_m": 13.31,
+   "min_radius_m": 18.9,
+   "aspect": 0.822
+  },
+  {
+   "seed": 200000,
+   "name": "Knot Garden",
+   "slug": "knot-garden",
+   "length_m": 1024.9,
+   "width_m": 13.37,
+   "min_radius_m": 21.5,
+   "aspect": 1.067
+  },
+  {
+   "seed": 200137,
+   "name": "Elbow Creek",
+   "slug": "elbow-creek",
+   "length_m": 1050.4,
+   "width_m": 11.43,
+   "min_radius_m": 20.8,
+   "aspect": 1.239
+  },
+  {
+   "seed": 200038,
+   "name": "Viper Bend",
+   "slug": "viper-bend",
+   "length_m": 957.5,
+   "width_m": 11.76,
+   "min_radius_m": 23.1,
+   "aspect": 0.924
+  },
+  {
+   "seed": 200002,
+   "name": "Paperclip",
+   "slug": "paperclip",
+   "length_m": 994.1,
+   "width_m": 12.66,
+   "min_radius_m": 18.9,
+   "aspect": 0.931
+  },
+  {
+   "seed": 200138,
+   "name": "Fishhook Point",
+   "slug": "fishhook-point",
+   "length_m": 1138.8,
+   "width_m": 11.05,
+   "min_radius_m": 21.7,
+   "aspect": 1.009
+  },
+  {
+   "seed": 200101,
+   "name": "Serpent Hill",
+   "slug": "serpent-hill",
+   "length_m": 1211.9,
+   "width_m": 11.43,
+   "min_radius_m": 23.9,
+   "aspect": 1.075
+  },
+  {
+   "seed": 200080,
+   "name": "Zigzag Basin",
+   "slug": "zigzag-basin",
+   "length_m": 920.8,
+   "width_m": 11.26,
+   "min_radius_m": 19.2,
+   "aspect": 1.104
+  },
+  {
+   "seed": 200174,
+   "name": "Comma Lake",
+   "slug": "comma-lake",
+   "length_m": 997.6,
+   "width_m": 11.31,
+   "min_radius_m": 18.7,
+   "aspect": 1.025
+  },
+  {
+   "seed": 200092,
+   "name": "Kidney Bean",
+   "slug": "kidney-bean",
+   "length_m": 1054.3,
+   "width_m": 11.47,
+   "min_radius_m": 20.0,
+   "aspect": 1.15
+  },
+  {
+   "seed": 200054,
+   "name": "Teardrop",
+   "slug": "teardrop",
+   "length_m": 1134.8,
+   "width_m": 11.76,
+   "min_radius_m": 22.4,
+   "aspect": 1.144
+  },
+  {
+   "seed": 200160,
+   "name": "Boomerang",
+   "slug": "boomerang",
+   "length_m": 937.5,
+   "width_m": 13.31,
+   "min_radius_m": 24.9,
+   "aspect": 0.713
+  },
+  {
+   "seed": 200103,
+   "name": "Lantern Loop",
+   "slug": "lantern-loop",
+   "length_m": 984.0,
+   "width_m": 12.44,
+   "min_radius_m": 23.6,
+   "aspect": 0.882
+  },
+  {
+   "seed": 200157,
+   "name": "Harbor Run",
+   "slug": "harbor-run",
+   "length_m": 927.1,
+   "width_m": 13.19,
+   "min_radius_m": 25.4,
+   "aspect": 1.124
+  },
+  {
+   "seed": 200144,
+   "name": "Long Meadow",
+   "slug": "long-meadow",
+   "length_m": 960.5,
+   "width_m": 13.33,
+   "min_radius_m": 25.1,
+   "aspect": 0.79
+  },
+  {
+   "seed": 200070,
+   "name": "Sodium Mile",
+   "slug": "sodium-mile",
+   "length_m": 1093.8,
+   "width_m": 13.37,
+   "min_radius_m": 27.0,
+   "aspect": 0.892
+  },
+  {
+   "seed": 200183,
+   "name": "Wet Asphalt",
+   "slug": "wet-asphalt",
+   "length_m": 1091.7,
+   "width_m": 12.86,
+   "min_radius_m": 26.2,
+   "aspect": 1.342
+  },
+  {
+   "seed": 200024,
+   "name": "Night Shift",
+   "slug": "night-shift",
+   "length_m": 1091.4,
+   "width_m": 13.19,
+   "min_radius_m": 28.7,
+   "aspect": 0.974
+  },
+  {
+   "seed": 200141,
+   "name": "Rain Gauge",
+   "slug": "rain-gauge",
+   "length_m": 972.4,
+   "width_m": 13.77,
+   "min_radius_m": 29.4,
+   "aspect": 1.15
+  },
+  {
+   "seed": 200037,
+   "name": "Drift Plains",
+   "slug": "drift-plains",
+   "length_m": 1027.4,
+   "width_m": 12.56,
+   "min_radius_m": 30.5,
+   "aspect": 1.195
+  },
+  {
+   "seed": 200118,
+   "name": "Open Water",
+   "slug": "open-water",
+   "length_m": 950.8,
+   "width_m": 12.75,
+   "min_radius_m": 33.8,
+   "aspect": 0.907
+  },
+  {
+   "seed": 200198,
+   "name": "Sweeper Bay",
+   "slug": "sweeper-bay",
+   "length_m": 1078.9,
+   "width_m": 11.51,
+   "min_radius_m": 34.2,
+   "aspect": 0.983
+  }
+ ]
+}

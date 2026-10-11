@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "created_utc": "2026-10-11T08:38:30+00:00",
+  "git_sha": "c0a2e73",
+  "device": "Tesla T4",
+  "cpu": "x86_64",
+  "jax_version": "0.11.1",
+  "step_definition": "one 50 ms control step for one car: 4 physics substeps, progress, reward, observations",
+  "rows": [
+    {
+      "impl": "jax-gpu",
+      "n_cars": 1,
+      "steps_per_s": 3550.7
+    },
+    {
+      "impl": "jax-gpu",
+      "n_cars": 64,
+      "steps_per_s": 296148.4
+    },
+    {
+      "impl": "jax-gpu",
+      "n_cars": 1024,
+      "steps_per_s": 4728703.3
+    },
+    {
+      "impl": "jax-gpu",
+      "n_cars": 4096,
+      "steps_per_s": 10913165.2
+    },
+    {
+      "impl": "jax-gpu",
+      "n_cars": 16384,
+      "steps_per_s": 25640065.4
+    },
+    {
+      "impl": "jax-gpu",
+      "n_cars": 65536,
+      "steps_per_s": 26030457.0
+    },
+    {
+      "impl": "jax-cpu",
+      "n_cars": 1,
+      "steps_per_s": 2309.5
+    },
+    {
+      "impl": "jax-cpu",
+      "n_cars": 64,
+      "steps_per_s": 19559.3
+    },
+    {
+      "impl": "jax-cpu",
+      "n_cars": 1024,
+      "steps_per_s": 29212.4
+    },
+    {
+      "impl": "jax-cpu",
+      "n_cars": 4096,
+      "steps_per_s": 28376.6
+    },
+    {
+      "impl": "jax-cpu",
+      "n_cars": 16384,
+      "steps_per_s": 28278.6
+    },
+    {
+      "impl": "jax-cpu",
+      "n_cars": 65536,
+      "steps_per_s": 28107.5
+    },
+    {
+      "impl": "numpy-loop",
+      "n_cars": 1,
+      "steps_per_s": 427.6
+    },
+    {
+      "impl": "numpy-loop",
+      "n_cars": 64,
+      "steps_per_s": 640.2
+    },
+    {
+      "impl": "numpy-loop",
+      "n_cars": 1024,
+      "steps_per_s": 554.5
+    }
+  ]
+}

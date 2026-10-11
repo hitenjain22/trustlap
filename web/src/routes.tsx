@@ -1,7 +1,10 @@
 import { createBrowserRouter } from 'react-router'
 import App from './App.tsx'
+import { lazy, Suspense } from 'react'
 import Home from './pages/Home.tsx'
 import NotFound from './pages/NotFound.tsx'
+
+const Playground = lazy(() => import('./pages/Playground.tsx'))
 
 export const router = createBrowserRouter([
   {
@@ -9,6 +12,14 @@ export const router = createBrowserRouter([
     element: <App />,
     children: [
       { index: true, element: <Home /> },
+      {
+        path: 'playground',
+        element: (
+          <Suspense fallback={null}>
+            <Playground />
+          </Suspense>
+        ),
+      },
       { path: '*', element: <NotFound /> },
     ],
   },

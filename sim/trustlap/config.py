@@ -449,6 +449,7 @@ def to_dict(cfg: Config = CONFIG) -> dict[str, Any]:
     out["time"]["physics_dt_s"] = cfg.time.physics_dt_s
     out["car"]["wheelbase_m"] = cfg.car.wheelbase_m
     out["obs"].update(
+        proprio_size=cfg.obs.proprio_size,
         policy_size=cfg.obs.policy_size,
         privileged_size=cfg.obs.privileged_size,
         history_size=cfg.obs.history_size,
@@ -459,6 +460,17 @@ def to_dict(cfg: Config = CONFIG) -> dict[str, Any]:
     out["obs"]["privileged_half_range"] = half
     out["obs_layout"] = OBS_LAYOUT
     return out
+
+
+PHYSICS_SECTIONS = ("time", "track", "car", "conditions", "obs", "reward", "episode", "scripted")
+
+
+def physics_hash(cfg: Config = CONFIG) -> str:
+    """sha256 of everything the browser port must reproduce. Parity fixtures record it, and a
+    test fails if it changes without the fixtures being regenerated (SPEC rule 2)."""
+    d = to_dict(cfg)
+    blob = json.dumps({k: d[k] for k in (*PHYSICS_SECTIONS, "obs_layout")}, sort_keys=True)
+    return hashlib.sha256(blob.encode()).hexdigest()
 
 
 def config_hash(cfg: Config = CONFIG) -> str:

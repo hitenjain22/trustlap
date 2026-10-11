@@ -35,10 +35,13 @@ from trustlap.env import Env, EnvState, core_step, observe, start_state
 from trustlap.track import TrackBank, generate_track, make_bank
 
 JAX_SIZES = (1, 64, 1024, 4096, 16384, 65536)
-CPU_SIZES = (1, 64, 1024, 4096)  # CPU throughput plateaus by ~1k cars; bigger sizes only cost time
+# CPU throughput plateaus by ~1k cars; 65,536 stays so the GPU/CPU headline compares like for like.
+CPU_SIZES = (1, 64, 1024, 65536)
 NUMPY_SIZES = (1, 64, 1024)
 PACKAGES = ("jax", "jaxlib", "jax-cuda12-plugin", "flax", "optax", "distrax", "chex", "numpy")
 SCAN_STEPS = 100
+MIN_SCAN_STEPS = 10
+STEPS_BUDGET = 2_000_000  # car-steps per timed CPU run; big batches use fewer scan steps
 
 
 def _median_time(fn: Any, repeats: int) -> float:
@@ -50,8 +53,10 @@ def _median_time(fn: Any, repeats: int) -> float:
     return float(np.median(times))
 
 
-def bench_jax(env: Env, n_cars: int, device: jax.Device, repeats: int = 5) -> float:
-    """Env steps per second for `n_cars` cars on `device`."""
+def bench_jax(
+    env: Env, n_cars: int, device: jax.Device, repeats: int = 5, scan_steps: int = SCAN_STEPS
+) -> float:
+    """Env steps per second for `n_cars` cars on `device`, timing `scan_steps` fused steps."""
     with jax.default_device(device):
         bank = jax.device_put(env.bank, device)
         keys = jax.random.split(jax.random.key(0), n_cars)
@@ -66,13 +71,13 @@ def bench_jax(env: Env, n_cars: int, device: jax.Device, repeats: int = 5) -> fl
                 s, *_ = env._step(s, actions, jax.random.split(ks, n_cars), difficulty, bank)
                 return s, None
 
-            return jax.lax.scan(body, state, jax.random.split(key, SCAN_STEPS))[0]
+            return jax.lax.scan(body, state, jax.random.split(key, scan_steps))[0]
 
         jax.block_until_ready(run(state, jax.random.key(1)))  # compile + warm up
         seconds = _median_time(
             lambda: jax.block_until_ready(run(state, jax.random.key(2))), repeats
         )
-    return n_cars * SCAN_STEPS / seconds
+    return n_cars * scan_steps / seconds
 
 
 def bench_numpy(bank: TrackBank, n_cars: int, steps: int) -> float:
@@ -170,7 +175,10 @@ def main() -> None:
         for n in args.jax_sizes:
             record(f"jax-{default.platform}", n, bench_jax(env, n, default))
     for n in args.cpu_sizes:
-        record("jax-cpu", n, bench_jax(env, n, cpu, repeats=3))
+        steps = max(MIN_SCAN_STEPS, min(SCAN_STEPS, STEPS_BUDGET // n))
+        record(
+            "jax-cpu", n, bench_jax(env, n, cpu, repeats=3 if n < 16384 else 2, scan_steps=steps)
+        )
     for n in args.numpy_sizes:
         record("numpy-loop", n, bench_numpy(bank_np, n, args.numpy_steps))
 

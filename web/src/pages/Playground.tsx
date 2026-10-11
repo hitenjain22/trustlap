@@ -3,6 +3,7 @@ import { Button } from '../components/Button.tsx'
 import { DiceIcon, PlayIcon } from '../components/icons.tsx'
 import { LiveCanvas } from '../components/LiveCanvas.tsx'
 import { TelemetryPanel } from '../components/TelemetryPanel.tsx'
+import { TrackDrawer } from '../components/TrackDrawer.tsx'
 import { Slider } from '../components/Slider.tsx'
 import { strings } from '../copy/strings.ts'
 import {
@@ -226,6 +227,9 @@ export default function Playground() {
   const [tau, setTau] = useState(url.tau ?? 0.2)
   const [toast, setToast] = useState<string | null>(null)
   const [showKeys, setShowKeys] = useState(false)
+  const [drawing, setDrawing] = useState(false)
+  const [custom, setCustom] = useState(false) // racing on a hand-drawn track
+  const drawButton = useRef<HTMLButtonElement>(null)
   useEffect(() => {
     loadCalibration().then(
       (c) => {
@@ -311,7 +315,29 @@ export default function Playground() {
   }
   const pickTrack = (s: number) => {
     setSeed(s)
+    setCustom(false)
     void sim.setTrack(s)
+  }
+  const showToast = (msg: string, ms = 2500) => {
+    setToast(msg)
+    setTimeout(() => setToast(null), ms)
+  }
+  // Drawing hides the sim, so pause it meanwhile.
+  const openDrawer = () => {
+    setShowKeys(false)
+    setDrawing(true)
+    if (playing) void sim.control('pause')
+  }
+  const closeDrawer = () => {
+    setDrawing(false)
+    if (playing) void sim.control('resume')
+    requestAnimationFrame(() => drawButton.current?.focus())
+  }
+  const raceDrawn = (points: Float64Array, widthM: number) => {
+    setCustom(true)
+    void sim.setCustomTrack(points, widthM)
+    closeDrawer()
+    showToast(strings.playground.drawnNoLink, 4000)
   }
   const togglePlay = () => {
     void sim.control(playing ? 'pause' : 'resume')
@@ -322,8 +348,8 @@ export default function Playground() {
     void sim.setSpeed(s)
   }
   // The seed on screen: the user's pick, else whatever the sim started with.
-  const shownSeed = seed ?? sim.status.track?.seed ?? null
-  const current = tracks.find((t) => t.seed === shownSeed)
+  const shownSeed = custom ? null : (seed ?? sim.status.track?.seed ?? null)
+  const current = custom ? undefined : tracks.find((t) => t.seed === shownSeed)
 
   // Keep the URL in sync (replaceState, debounced 300 ms).
   const query = serializePlayground({
@@ -347,11 +373,13 @@ export default function Playground() {
     const link = `${window.location.origin}${window.location.pathname}?${query}`
     try {
       await navigator.clipboard.writeText(link)
-      setToast(strings.playground.linkCopied)
+      showToast(
+        custom ? strings.playground.drawnNoLink : strings.playground.linkCopied,
+        custom ? 4000 : 2500,
+      )
     } catch {
-      setToast(strings.playground.linkCopyFailed)
+      showToast(strings.playground.linkCopyFailed)
     }
-    setTimeout(() => setToast(null), 2500)
   }
 
   // Keyboard shortcuts (SPEC 10.4), ignored while typing in a form control.
@@ -360,6 +388,7 @@ export default function Playground() {
     keyHandler.current = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement
       if (
+        drawing ||
         e.metaKey ||
         e.ctrlKey ||
         e.altKey ||
@@ -371,7 +400,9 @@ export default function Playground() {
         togglePlay()
       } else if (e.key === 'r' || e.key === 'R') void sim.control('reset')
       else if (e.key === 'n' || e.key === 'N') pickTrack(Math.floor(Math.random() * 2 ** 31))
-      else if (e.key === '?') setShowKeys((v) => !v)
+      else if (e.key === 'd' || e.key === 'D') {
+        if (cfg) openDrawer()
+      } else if (e.key === '?') setShowKeys((v) => !v)
       else if (/^[1-4]$/.test(e.key)) {
         const d = DRIVER_ORDER[Number(e.key) - 1]!
         if (available(d)) pickDriver(d)
@@ -400,6 +431,7 @@ export default function Playground() {
             value={current ? current.seed : ''}
             onChange={(e) => pickTrack(Number(e.currentTarget.value))}
           >
+            {custom && <option value="">{strings.playground.drawnTrack}</option>}
             {!current && shownSeed !== null && (
               <option value="">{strings.playground.seed(shownSeed)}</option>
             )}
@@ -410,13 +442,16 @@ export default function Playground() {
             ))}
           </select>
           {shownSeed !== null && (
-            <span className="numeral text-[14px] text-text-3">
+            <span className="numeral hidden text-[14px] text-text-3 2xl:inline">
               {strings.playground.seed(shownSeed)}
             </span>
           )}
           <Button onClick={() => pickTrack(Math.floor(Math.random() * 2 ** 31))}>
             <DiceIcon />
             {strings.playground.newTrack}
+          </Button>
+          <Button ref={drawButton} variant="ghost" disabled={!cfg || !ready} onClick={openDrawer}>
+            {strings.playground.drawTrack}
           </Button>
           <span className="mx-1 hidden h-6 w-px bg-line md:block" aria-hidden="true" />
           <Button
@@ -435,37 +470,6 @@ export default function Playground() {
           <Button variant="ghost" onClick={() => void sim.control('reset')}>
             {strings.playground.restart}
           </Button>
-          <Button variant="ghost" onClick={() => void copyLink()}>
-            {strings.playground.copyLink}
-          </Button>
-          <div className="relative">
-            <Button
-              variant="ghost"
-              aria-expanded={showKeys}
-              aria-label={strings.playground.shortcuts}
-              onClick={() => setShowKeys((v) => !v)}
-            >
-              ?
-            </Button>
-            {showKeys && (
-              <div
-                className="absolute right-0 z-20 mt-2 w-64 rounded-panel border border-line bg-asphalt-800 p-4 text-[13px]"
-                role="dialog"
-                aria-label={strings.playground.shortcuts}
-              >
-                <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
-                  {strings.playground.keys.map(([k, v]) => (
-                    <div key={k} className="contents">
-                      <dt>
-                        <kbd className="rounded border border-line px-1.5 text-paint">{k}</kbd>
-                      </dt>
-                      <dd className="text-text-2">{v}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </div>
-            )}
-          </div>
         </div>
         <div className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-2 text-[14px] md:px-6">
           <span className="label">{strings.playground.driver}</span>
@@ -502,18 +506,65 @@ export default function Playground() {
             ))}
           </div>
         </div>
-        <LiveCanvas
-          canvasRef={sim.canvasRef}
-          phase={sim.status.phase}
-          label={strings.playground.canvasLabel}
-          className="aspect-[4/3] w-full lg:aspect-auto lg:h-[calc(100svh-56px-110px-200px)] lg:min-h-[380px]"
-        />
+        {/* While drawing, give small screens room to draw (the overlay covers this box). */}
+        <div className={`relative ${drawing ? 'min-h-[min(560px,75svh)]' : ''}`}>
+          <LiveCanvas
+            canvasRef={sim.canvasRef}
+            phase={sim.status.phase}
+            label={strings.playground.canvasLabel}
+            className="aspect-[4/3] w-full lg:aspect-auto lg:h-[calc(100svh-56px-110px-200px)] lg:min-h-[380px]"
+          />
+          {drawing && cfg && (
+            <TrackDrawer
+              cfg={cfg.track}
+              onUse={raceDrawn}
+              onRandom={() => {
+                pickTrack(Math.floor(Math.random() * 2 ** 31))
+                closeDrawer()
+              }}
+              onCancel={closeDrawer}
+            />
+          )}
+        </div>
         <TelemetryPanel t={sim.telemetry} tau={calibration ? tau : null} governorOn={governorOn} />
       </section>
       <aside
         className="border-line bg-asphalt-800 lg:h-[calc(100svh-56px)] lg:overflow-y-auto lg:border-l"
         aria-label="Conditions"
       >
+        <div className="flex items-center justify-end gap-1 border-b border-line px-3 py-2">
+          <Button variant="ghost" onClick={() => void copyLink()}>
+            {strings.playground.copyLink}
+          </Button>
+          <div className="relative">
+            <Button
+              variant="ghost"
+              aria-expanded={showKeys}
+              aria-label={strings.playground.shortcuts}
+              onClick={() => setShowKeys((v) => !v)}
+            >
+              ?
+            </Button>
+            {showKeys && (
+              <div
+                className="absolute right-0 z-20 mt-2 w-64 rounded-panel border border-line bg-asphalt-800 p-4 text-[13px]"
+                role="dialog"
+                aria-label={strings.playground.shortcuts}
+              >
+                <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
+                  {strings.playground.keys.map(([k, v]) => (
+                    <div key={k} className="contents">
+                      <dt>
+                        <kbd className="rounded border border-line px-1.5 text-paint">{k}</kbd>
+                      </dt>
+                      <dd className="text-text-2">{v}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            )}
+          </div>
+        </div>
         <p className="px-5 pt-5 text-[14px] text-text-2">{strings.playground.intro}</p>
         <div className="px-5 pt-4">
           <p className="label">{strings.playground.presets}</p>

@@ -33,7 +33,12 @@ import {
 } from '../sim/env.ts'
 import { PCG32 } from '../sim/rng.ts'
 import { scriptedAction } from '../sim/scripted.ts'
-import { generateTrack, toTrackData, type TrackData } from '../sim/track.ts'
+import {
+  buildTrack as splineTrack,
+  generateTrack,
+  toTrackData,
+  type TrackData,
+} from '../sim/track.ts'
 import {
   CarField,
   CarFlag,
@@ -91,6 +96,7 @@ let speedMultiplier = 1
 let governor = { on: false, tau: 0.2 }
 let pending: Partial<ConditionValues> = {} // changes that arrived before init
 let pendingTrack: number | null = null
+let customTrack: { points: Float64Array; widthM: number } | null = null
 let paused = false
 let simStep = 0
 let crashes = 0
@@ -178,11 +184,20 @@ function crashProbability(u: number): number {
   return ps[ps.length - 1]!
 }
 
-function buildTrack(seed: number): TrackGeometry {
-  trackSeed = seed
-  track = toTrackData(generateTrack(seed, cfg.track))
+/** Build a generated track (seed ≥ 0) or a hand-drawn one (`custom` control points). */
+function buildTrack(
+  seed: number,
+  custom?: { points: Float64Array; widthM: number },
+): TrackGeometry {
+  trackSeed = custom ? -1 : seed
+  track = toTrackData(
+    custom
+      ? splineTrack(custom.points, custom.widthM, -1, 0, 0, cfg.track)
+      : generateTrack(seed, cfg.track),
+  )
   shared = nominalConditions(cfg)
-  layoutPuddles(shared, seed, track.lengthM, track.widthM, cfg)
+  // Drawn tracks have no seed of their own: puddle placement uses a fixed one.
+  layoutPuddles(shared, custom ? 0 : seed, track.lengthM, track.widthM, cfg)
   placePuddles(shared, track, 0)
   setActivePuddles(shared, values.puddles)
   return geometry()
@@ -473,7 +488,7 @@ const api: SimApi = {
     // Anything the UI changed while the networks were loading wins over the initial values.
     values = { ...values, ...pending }
     pending = {}
-    const geo = buildTrack(pendingTrack ?? o.trackSeed)
+    const geo = customTrack ? buildTrack(-1, customTrack) : buildTrack(pendingTrack ?? o.trackSeed)
     pendingTrack = null
     placeCars()
     ready = true
@@ -481,11 +496,19 @@ const api: SimApi = {
     return geo
   },
   async setTrack(seed: number) {
+    customTrack = null
     if (!ready) {
       pendingTrack = seed // init builds it
       return null
     }
     const geo = buildTrack(seed)
+    placeCars()
+    return geo
+  },
+  async setCustomTrack(points, widthM) {
+    customTrack = { points, widthM }
+    if (!ready) return null // init builds it
+    const geo = buildTrack(-1, customTrack)
     placeCars()
     return geo
   },

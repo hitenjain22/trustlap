@@ -255,6 +255,16 @@ export function useLiveSim(opts: LiveSimOptions) {
     setStatus((s) => ({ ...s, track: geo, crashes: 0, leaderLap: 1 }))
   }, [])
 
+  const setCustomTrack = useCallback(async (points: Float64Array, widthM: number) => {
+    const api = apiRef.current
+    const renderer = rendererRef.current
+    if (!api || !renderer) return
+    const geo = await api.setCustomTrack(points, widthM)
+    if (!geo) return
+    renderer.setTrack(geo, false)
+    setStatus((s) => ({ ...s, track: geo, crashes: 0, leaderLap: 1 }))
+  }, [])
+
   const control = useCallback(async (action: 'pause' | 'resume' | 'reset') => {
     const api = apiRef.current
     if (!api) return
@@ -287,6 +297,7 @@ export function useLiveSim(opts: LiveSimOptions) {
     telemetry,
     setConditions,
     setTrack,
+    setCustomTrack,
     control,
     setSpeed,
     setDrivers,

@@ -97,6 +97,7 @@ export interface SimInit {
 
 /** Track geometry the renderer needs (float32, interleaved xy). */
 export interface TrackGeometry {
+  /** Generator seed, or -1 for a hand-drawn track. */
   seed: number
   n: number
   lengthM: number
@@ -112,6 +113,8 @@ export interface SimApi {
   init(opts: SimInit): Promise<TrackGeometry>
   /** Null if called before init finished (init then builds this track). */
   setTrack(trackSeed: number): Promise<TrackGeometry | null>
+  /** A hand-drawn track from validated control points (meters); geometry seed is -1. */
+  setCustomTrack(controlPoints: Float64Array, widthM: number): Promise<TrackGeometry | null>
   setConditions(values: Partial<ConditionValues>): Promise<number> // returns active puddles
   setDrivers(driver: DriverKind, ghosts: DriverKind[]): Promise<void>
   /** Training Lab: drive the "teacher" cars with a timeline checkpoint (checkpoints/<name>). */

@@ -401,3 +401,153 @@ export function toTrackData(track: Track): TrackData {
     curvature: Float32Array.from(track.curvature),
   }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Hand-drawn tracks (browser only, SPEC 6.1)
+// ---------------------------------------------------------------------------------------------
+
+/** Ramer–Douglas–Peucker simplification of an open polyline (interleaved xy), tolerance ε. */
+export function simplifyRdp(points: Float64Array, epsilon: number): Float64Array {
+  const n = points.length / 2
+  if (n < 3) return points.slice()
+  const keep = new Uint8Array(n)
+  keep[0] = keep[n - 1] = 1
+  const stack: [number, number][] = [[0, n - 1]]
+  while (stack.length) {
+    const [a, b] = stack.pop()!
+    const ax = points[2 * a]!, ay = points[2 * a + 1]! // prettier-ignore
+    const bx = points[2 * b]!, by = points[2 * b + 1]! // prettier-ignore
+    const dx = bx - ax
+    const dy = by - ay
+    const len = Math.hypot(dx, dy)
+    let worst = -1
+    let worstD = 0
+    for (let i = a + 1; i < b; i++) {
+      const px = points[2 * i]!
+      const py = points[2 * i + 1]!
+      // A closed stroke starts and ends on the same point: measure from that point instead.
+      const d =
+        len < 1e-9
+          ? Math.hypot(px - ax, py - ay)
+          : Math.abs(dy * px - dx * py + bx * ay - by * ax) / len
+      if (d > worstD) {
+        worstD = d
+        worst = i
+      }
+    }
+    if (worst >= 0 && worstD > epsilon) {
+      keep[worst] = 1
+      stack.push([a, worst], [worst, b])
+    }
+  }
+  const out: number[] = []
+  for (let i = 0; i < n; i++) if (keep[i]) out.push(points[2 * i]!, points[2 * i + 1]!)
+  return Float64Array.from(out)
+}
+
+/** Evenly resample a closed polygon to `count` points (by arclength). */
+export function resamplePolygon(points: Float64Array, count: number): Float64Array {
+  const n = points.length / 2
+  const cum = [0]
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n
+    cum.push(
+      cum[i]! +
+        Math.hypot(points[2 * j]! - points[2 * i]!, points[2 * j + 1]! - points[2 * i + 1]!),
+    )
+  }
+  const total = cum[n]!
+  const out = new Float64Array(2 * count)
+  let k = 0
+  for (let c = 0; c < count; c++) {
+    const s = (c * total) / count
+    while (cum[k + 1]! < s) k++
+    const f = (s - cum[k]!) / Math.max(1e-9, cum[k + 1]! - cum[k]!)
+    const j = (k + 1) % n
+    out[2 * c] = points[2 * k]! + f * (points[2 * j]! - points[2 * k]!)
+    out[2 * c + 1] = points[2 * k + 1]! + f * (points[2 * j + 1]! - points[2 * k + 1]!)
+  }
+  return out
+}
+
+export interface DrawnTrack {
+  controlPoints: Float64Array
+  track: Track
+  reason: TrackFailure | null
+}
+
+/**
+ * Turn a hand-drawn closed path (any units, y up) into a track: simplify (RDP, ε = 1.5 m, growing until
+ * ≤ 30 control points; at least 8), scale so the spline length lands inside the legal range,
+ * then spline + validate. `reason` is null when the track is valid.
+ */
+export function trackFromDrawing(
+  path: Float64Array,
+  cfg: TrackConfig,
+  widthM = (cfg.width_min_m + cfg.width_max_m) / 2,
+): DrawnTrack | null {
+  if (path.length / 2 < 8) return null
+  // The stroke arrives in screen units: bring it to a nominal size in meters first, so RDP's
+  // ε means meters (the exact length is fitted after simplification).
+  let strokeM = 0
+  for (let i = 1; i < path.length / 2; i++) {
+    strokeM += Math.hypot(path[2 * i]! - path[2 * i - 2]!, path[2 * i + 1]! - path[2 * i - 1]!)
+  }
+  const pre = (cfg.length_min_m + cfg.length_max_m) / 2 / Math.max(strokeM, 1e-9)
+  path = path.map((v) => v * pre)
+  let eps = 1.5
+  let pts = simplifyRdp(path, eps)
+  while (pts.length / 2 > 30) {
+    eps *= 1.5
+    pts = simplifyRdp(path, eps)
+  }
+  // Drop the closing duplicate (the path ends near its start) and enforce ≥ 8 points.
+  const n = pts.length / 2
+  if (n > 3 && Math.hypot(pts[0]! - pts[2 * (n - 1)]!, pts[1]! - pts[2 * (n - 1) + 1]!) < 1e-6) {
+    pts = pts.slice(0, 2 * (n - 1))
+  }
+  if (pts.length / 2 < 8) pts = resamplePolygon(pts, 8)
+  pts = fitLength(pts, cfg, widthM)
+  const track = buildTrack(pts, widthM, -1, 0, 0, cfg)
+  if (!Number.isFinite(track.lengthM)) return null // degenerate stroke (e.g. a single dot)
+  return { controlPoints: pts, track, reason: validateTrack(track, cfg) }
+}
+
+/** Center control points and scale them so the spline length sits comfortably inside [min, max]. */
+function fitLength(points: Float64Array, cfg: TrackConfig, widthM: number): Float64Array {
+  const pts = points.slice()
+  const m = pts.length / 2
+  let cx = 0
+  let cy = 0
+  for (let i = 0; i < m; i++) {
+    cx += pts[2 * i]! / m
+    cy += pts[2 * i + 1]! / m
+  }
+  for (let i = 0; i < m; i++) {
+    pts[2 * i] = pts[2 * i]! - cx
+    pts[2 * i + 1] = pts[2 * i + 1]! - cy
+  }
+  const lengthOf = (p: Float64Array) => buildTrack(p, widthM, -1, 0, 0, cfg).lengthM
+  const target = Math.min(cfg.length_max_m * 0.9, Math.max(cfg.length_min_m * 1.15, lengthOf(pts)))
+  for (let iter = 0; iter < 3; iter++) {
+    const scale = target / lengthOf(pts)
+    if (Math.abs(scale - 1) < 0.01) break
+    for (let i = 0; i < pts.length; i++) pts[i] = pts[i]! * scale
+  }
+  return pts
+}
+
+/**
+ * SPEC 6.1 Auto-fix: Laplacian-smooth the control points (λ = 0.3) up to 10 times until valid.
+ * Smoothing shrinks the loop, so each pass re-fits the length (which also opens corners up).
+ */
+export function autoFixDrawing(drawn: DrawnTrack, cfg: TrackConfig): DrawnTrack {
+  let pts = drawn.controlPoints
+  let result = drawn
+  for (let it = 0; it < cfg.autofix_max_iters && result.reason !== null; it++) {
+    pts = fitLength(laplacianSmooth(pts, cfg.autofix_lambda), cfg, drawn.track.widthM)
+    const track = buildTrack(pts, drawn.track.widthM, -1, 0, it + 1, cfg)
+    result = { controlPoints: pts, track, reason: validateTrack(track, cfg) }
+  }
+  return result
+}

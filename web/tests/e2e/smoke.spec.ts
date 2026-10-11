@@ -62,6 +62,56 @@ test('playground: sliders show the training band and warn outside it', async ({ 
   })
 })
 
+test('playground: draw a loop, validate it, race on it', async ({ page }) => {
+  await page.goto('/playground')
+  const draw = page.getByRole('button', { name: 'Draw a track' })
+  await expect(draw).toBeEnabled({ timeout: 15_000 })
+  await draw.click()
+  const dialog = page.getByRole('dialog', { name: 'Draw a track' })
+  await expect(dialog).toBeFocused()
+  const box = (await dialog.boundingBox())!
+  const cx = box.x + box.width / 2
+  const cy = box.y + box.height / 2
+  const loop = async (fx: (t: number) => number, fy: (t: number) => number) => {
+    await page.mouse.move(cx + fx(0), cy + fy(0))
+    await page.mouse.down()
+    for (let i = 1; i <= 120; i++) {
+      const t = (2 * Math.PI * i) / 120
+      await page.mouse.move(cx + fx(t), cy + fy(t))
+    }
+    await page.mouse.up()
+  }
+  const rx = box.width * 0.3
+  const ry = box.height * 0.3
+  // A figure eight crosses itself.
+  await loop(
+    (t) => rx * Math.sin(t),
+    (t) => ry * Math.sin(t) * Math.cos(t),
+  )
+  await expect(
+    page.getByRole('status').filter({ hasText: /crosses itself|too close/ }),
+  ).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Use this track' })).toBeDisabled()
+  await page.getByRole('button', { name: 'Clear' }).click()
+  // An oval is valid.
+  await loop(
+    (t) => rx * Math.cos(t),
+    (t) => ry * Math.sin(t),
+  )
+  await expect(page.getByRole('status').filter({ hasText: 'Looks good' })).toBeVisible()
+  await page.getByRole('button', { name: 'Use this track' }).click()
+  await expect(dialog).toHaveCount(0)
+  const select = page.getByRole('combobox', { name: 'Track' })
+  await expect(select).toHaveValue('')
+  await expect(select.locator('option:checked')).toHaveText('Your drawn track')
+  await expect(page.locator('canvas').first()).toHaveAttribute('data-mean-speed', /\d/)
+  await expect(draw).toBeFocused()
+  // Esc cancels the drawer.
+  await draw.click()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+})
+
 test('unknown routes show the not-found page via the SPA fallback', async ({ page }) => {
   await page.goto('/no-such-page')
   await expect(page.getByRole('heading', { level: 1 })).toContainText('drove off the track')

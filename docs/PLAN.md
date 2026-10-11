@@ -95,3 +95,5 @@ Golden fixtures live in `web/tests/parity/golden/` rather than `web/public/artif
 2. Presets, URL state (SPEC 10.5, zod-parsed and clamped, replaceState debounced 300 ms), Copy link, keyboard shortcuts (SPEC 10.4).
 3. Draw a track (SPEC 6.1 drawn tracks + 10.2): pointer path → RDP → control points → scale → validate with specific messages → Auto-fix.
 4. Load-time long tasks on retina.
+
+Status 2026-10-11 14:30: items 1–3 done (draw-a-track in `web/src/components/TrackDrawer.tsx`, geometry in `web/src/sim/track.ts`); item 4 next.

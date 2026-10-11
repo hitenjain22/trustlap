@@ -65,9 +65,9 @@ python -m trustlap.bench --out runs/bench.json         # throughput (GPU rows on
 2. **Runtime → Change runtime type → T4 GPU → Save.**
 3. **Runtime → Run all.** If Colab warns the notebook isn't from Google, click **Run anyway**.
 4. Wait ~10–15 min. The last cell downloads `bench.json` to your computer.
-5. Put the file at `sim/runs/bench.json` (or hand it to Claude Code), and paste the output of cell 3 (package versions) into the "Known-good Colab versions" list below.
+5. Put the file at `sim/runs/bench.json` (or hand it to Claude Code). It records the device, CPU and package versions itself. Keep GPU results by copying them to `sim/results/` (committed; `runs/` is not).
 
-Known-good Colab versions: *(fill in after the first run)*
+Known-good Colab setup: Tesla T4 (15 GB), Colab's preinstalled JAX **0.11.1** with CUDA, `pip install -e sim` on top (2026-10-11, commit `c0a2e73`). Full benchmark took ~25 min with the old CPU sizes; ~10 min now.
 
 ## Training (Colab / Kaggle)
 

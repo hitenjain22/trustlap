@@ -14,8 +14,11 @@ reward, termination and all observations (policy, privileged, history).
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as dt
+import importlib.metadata
 import json
+import os
 import platform
 import subprocess
 import time
@@ -32,7 +35,9 @@ from trustlap.env import Env, EnvState, core_step, observe, start_state
 from trustlap.track import TrackBank, generate_track, make_bank
 
 JAX_SIZES = (1, 64, 1024, 4096, 16384, 65536)
+CPU_SIZES = (1, 64, 1024, 4096)  # CPU throughput plateaus by ~1k cars; bigger sizes only cost time
 NUMPY_SIZES = (1, 64, 1024)
+PACKAGES = ("jax", "jaxlib", "jax-cuda12-plugin", "flax", "optax", "distrax", "chex", "numpy")
 SCAN_STEPS = 100
 
 
@@ -96,6 +101,25 @@ def bench_numpy(bank: TrackBank, n_cars: int, steps: int) -> float:
     return n_cars * steps / (time.perf_counter() - t0)
 
 
+def _cpu_name() -> str:
+    try:  # Linux (Colab, Kaggle, CI)
+        with open("/proc/cpuinfo") as f:
+            for line in f:
+                if line.startswith("model name"):
+                    return line.split(":", 1)[1].strip()
+    except OSError:
+        pass
+    return platform.processor() or platform.machine()
+
+
+def _package_versions() -> dict[str, str]:
+    versions = {}
+    for name in PACKAGES:
+        with contextlib.suppress(importlib.metadata.PackageNotFoundError):
+            versions[name] = importlib.metadata.version(name)
+    return versions
+
+
 def _git_sha() -> str:
     try:
         return subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True).strip()
@@ -110,7 +134,7 @@ def main() -> None:
     )
     parser.add_argument("--out", type=Path, default=Path("bench.json"))
     parser.add_argument("--jax-sizes", type=int, nargs="+", default=list(JAX_SIZES))
-    parser.add_argument("--cpu-sizes", type=int, nargs="+", default=list(JAX_SIZES))
+    parser.add_argument("--cpu-sizes", type=int, nargs="+", default=list(CPU_SIZES))
     parser.add_argument("--numpy-sizes", type=int, nargs="+", default=list(NUMPY_SIZES))
     parser.add_argument("--numpy-steps", type=int, default=5)
     parser.add_argument("--tracks", type=int, default=32, help="tracks in the benchmark bank")
@@ -122,10 +146,25 @@ def main() -> None:
     default = jax.devices()[0]
     cpu = jax.devices("cpu")[0]
     rows: list[dict[str, Any]] = []
+    out = {
+        "schema_version": 1,
+        "created_utc": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+        "git_sha": _git_sha(),
+        "device": getattr(default, "device_kind", default.platform),
+        "cpu": _cpu_name(),
+        "cpu_count": os.cpu_count(),
+        "jax_version": jax.__version__,
+        "packages": _package_versions(),
+        "step_definition": (
+            "one 50 ms control step for one car: 4 physics substeps, progress, reward, observations"
+        ),
+        "rows": rows,
+    }
 
     def record(impl: str, n: int, sps: float) -> None:
         rows.append({"impl": impl, "n_cars": n, "steps_per_s": round(sps, 1)})
         print(f"{impl:14s} {n:7d} cars  {sps:14,.0f} steps/s", flush=True)
+        args.out.write_text(json.dumps(out, indent=2))  # save after every row: long runs can die
 
     if default.platform != "cpu":
         for n in args.jax_sizes:
@@ -135,18 +174,6 @@ def main() -> None:
     for n in args.numpy_sizes:
         record("numpy-loop", n, bench_numpy(bank_np, n, args.numpy_steps))
 
-    out = {
-        "schema_version": 1,
-        "created_utc": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
-        "git_sha": _git_sha(),
-        "device": getattr(default, "device_kind", default.platform),
-        "cpu": platform.processor() or platform.machine(),
-        "jax_version": jax.__version__,
-        "step_definition": (
-            "one 50 ms control step for one car: 4 physics substeps, progress, reward, observations"
-        ),
-        "rows": rows,
-    }
     args.out.write_text(json.dumps(out, indent=2))
     print(f"wrote {args.out}")
 

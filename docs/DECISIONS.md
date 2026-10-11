@@ -78,3 +78,29 @@ Implementation choices:
 - **Tests get their own `tsconfig.test.json`** (adds Node types for reading fixtures); app code still compiles without Node types.
 - **No frontend design skill was available** in this environment (SPEC 0 asks to load one if present); the UI follows SPEC 11 directly.
 - **Benchmark CPU sizes** keep 65,536 cars (with fewer fused steps for big CPU batches) so the GPU/CPU headline always compares like for like at the largest size.
+
+### 2026-10-11 (overnight: M3–M6, made autonomously while Hiten slept; review in the morning)
+
+Compute (the big one):
+- **All training ran on the laptop CPU at reduced scale**, because GPU training needs Hiten's Colab/Kaggle account. Measured PPO throughput ≈ 17k env steps/s (1,024 envs, 4 CPU threads). Budgets: blind 40M steps (single agent; SPEC 7.8's P = 8 small PBT skipped), teacher PBT P = 4 × 20M steps (SPEC: 16 × 100M), students K = 5 × 8M steps (SPEC: 5 × 40M). SPEC 7.9 lists these knobs; every number on the site states the compute it came from. Full-size GPU runs can replace these artifacts later without code changes.
+- **Training chain is a detached shell script** (`sim/scripts/overnight_pipeline.sh`) so it keeps going even if the Claude session is interrupted; each stage resumes from its checkpoint.
+
+Learning:
+- **Value loss is plain MSE** (no value clipping); SPEC 14.3 lists clipping as a last resort, and explained variance stays ≈ 0.9.
+- **Curriculum success counts only cars at the curriculum difficulty** (the 20% easy cars at d = 0 are excluded once d > 0), otherwise easy laps inflate success.
+- **Stretch resets** pick one condition uniformly and set it to the *harder* edge of its current range (the one farther from nominal).
+- **PBT fitness** = mean progress per second over finished episodes in the 25-update window (as specified). The "watch it learn" snapshots save the *best current member* at 12 evenly spaced points, not the final winner's ancestor chain (simpler; the difference is cosmetic for a timeline).
+- **NaN guard**: a non-finite car is reset and counted; the run aborts if NaN resets exceed 0.1% of episodes after update 5.
+- **Students**: DAgger rollouts use the teacher's *mean* action fed ẑ (or z with probability β in the first 10%); no exploration noise. Grip labels are the true axle μ recovered from the privileged vector. Students train at the teacher's final curriculum difficulty with the same easy/stretch split.
+
+Evaluation:
+- **Puddle step-response latency** is defined as: time from the true rear grip first dropping by more than the 0.1 tolerance, until |μ̂_rear − μ_rear| < 0.1 (SPEC's "from entering the puddle" is ill-defined because at the edge the error is still small). Trials vary entry speed 18–22 m/s and lateral offset ±1.5 m. The straight is a 700 m stadium loop.
+- **Governor τ** is chosen on the validation bank: the lowest crash rate whose paired lap time is at most 5% slower than ungoverned (falls back to the middle τ if none qualifies). The sweep chart is reported on the test bank.
+- **Calibration** is fit on validation rollouts of five suites (combined, puddles, wet, ice, extreme_lag), so it covers in- and out-of-distribution risk; ECE/Brier/AUROC are reported on test rollouts of the same suites.
+- **"Crash" for calibration and the crash-rate metric** includes off-track and spins; stalls and wrong-way count as crashes in the evaluation outcome too (they are failures of the lap).
+- **Rollouts stop early** when every car has finished (chunks of 200 steps): identical results, much less CPU.
+
+Browser:
+- **Hero runs the student with one ensemble member** (48 cars × 5 students would be too heavy for phones); the Playground runs all five and shows the crash-risk estimate. Falls back to the best shipped driver when a network is missing.
+- **Each hero car gets a slightly different car** (power ×0.94–1.0, mass ×1.0–1.06, inside the training ranges) so identical deterministic drivers spread out instead of driving nose to tail.
+- **Which drivers a build offers comes from `manifest.json`** (data-driven, no hand-kept list).

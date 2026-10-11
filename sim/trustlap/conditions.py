@@ -50,14 +50,74 @@ def _uniform(key: jax.Array, r: Range, d: jax.Array) -> jax.Array:
     return jax.random.uniform(key, (), minval=lo, maxval=hi)
 
 
+# Parameters a "stretch" reset can push to the harder edge of their range (SPEC 7.4).
+STRETCH_FIELDS = (
+    ("rain", "rain"),
+    ("mu_dry", "mu_dry"),
+    ("wear_per_km", "tire_wear_per_km"),
+    ("mass_mult", "mass_mult"),
+    ("drag_area_m2", "drag_area_m2"),
+    ("rolling_coef", "rolling_coef"),
+    ("power_mult", "power_mult"),
+    ("brake_mult", "brake_mult"),
+    ("steer_tau_s", "steer_tau_s"),
+    ("obs_noise", "obs_noise"),
+    ("gust_sigma_mps", "gust_sigma_mps"),
+    ("wind_mps", "wind_speed_mps"),
+    ("delay_steps", None),
+)
+
+
+def _hard_bound(r: Range, d: jax.Array) -> jax.Array:
+    """The bound at difficulty d that is farther from nominal (the harder one)."""
+    lo, hi = r.at_difficulty(d)
+    return lo if abs(r.lo - r.nominal) > abs(r.hi - r.nominal) else hi
+
+
 def sample_conditions(
     key: jax.Array,
     difficulty: jax.Array,
     track_length_m: jax.Array,
     track_width_m: jax.Array,
     cfg: Config = CONFIG,
+    stretch: jax.Array | bool = False,
 ) -> Conditions:
-    """Draw conditions for one car at curriculum difficulty `difficulty` ∈ [0, 1]."""
+    """Draw conditions for one car at curriculum difficulty `difficulty` ∈ [0, 1].
+
+    With `stretch`, one randomly chosen parameter is set to the harder edge of its range at
+    this difficulty ("stretch exposure", SPEC 7.4).
+    """
+    cond = _sample(key, difficulty, track_length_m, track_width_m, cfg)
+    c = cfg.conditions
+    d = jnp.asarray(difficulty, jnp.float32)
+    pick = jax.random.randint(jax.random.fold_in(key, 7919), (), 0, len(STRETCH_FIELDS))
+    updates = {}
+    for i, (field, range_name) in enumerate(STRETCH_FIELDS):
+        on = jnp.asarray(stretch) & (pick == i)
+        current = getattr(cond, field)
+        if field == "delay_steps":
+            edge = jnp.floor(c.delay_max_steps * d + 0.5).astype(jnp.int32)
+        elif field == "wind_mps":
+            norm = jnp.sqrt(jnp.sum(current * current))
+            direction = jnp.where(
+                norm > 1e-3, current / jnp.maximum(norm, 1e-3), jnp.array([1.0, 0.0])
+            )
+            edge = _hard_bound(c.wind_speed_mps, d) * direction
+        else:
+            edge = _hard_bound(getattr(c, range_name), d)
+        updates[field] = jnp.where(on, edge, current)
+    cond = cond._replace(**updates)
+    # Keep the derived base grip consistent with a stretched rain level or dry grip.
+    return cond._replace(mu_base=cond.mu_dry * (1.0 - c.rain_grip_drop * cond.rain))
+
+
+def _sample(
+    key: jax.Array,
+    difficulty: jax.Array,
+    track_length_m: jax.Array,
+    track_width_m: jax.Array,
+    cfg: Config,
+) -> Conditions:
     c = cfg.conditions
     p = c.puddle_slots
     keys = jax.random.split(key, 20)
@@ -164,8 +224,8 @@ def suite_conditions(
     track_width_m: jax.Array,
     cfg: Config = CONFIG,
 ) -> Conditions:
-    """Conditions for one car in a named evaluation suite (SPEC 8.2). Everything not named by
-    the suite stays nominal. Suites so far: dry, wet, puddles (the rest arrive with evaluate.py).
+    """Conditions for one car in a named evaluation suite (SPEC 8.2). Everything a suite
+    doesn't name stays nominal. `SUITES` lists them; `OOD_SUITES` were never trained on.
     """
     c = cfg.conditions
     k_place, k_rain, k_count = jax.random.split(key, 3)
@@ -191,4 +251,32 @@ def suite_conditions(
         return with_rain(base, 0.8, cfg)._replace(
             puddle_active=jnp.ones(c.puddle_slots, jnp.float32)
         )
+    f = jnp.float32
+    if suite == "wind":
+        angle = jax.random.uniform(k_rain, (), maxval=2 * jnp.pi)
+        wind = 10.0 * jnp.stack([jnp.cos(angle), jnp.sin(angle)])
+        return base._replace(wind_mps=wind, gust_sigma_mps=f(3.0))
+    if suite == "worn":
+        return base._replace(wear_per_km=f(0.25))
+    if suite == "laggy":
+        return base._replace(steer_tau_s=f(0.15), delay_steps=jnp.int32(2))
+    if suite == "heavy":
+        return base._replace(mass_mult=f(1.25), power_mult=f(0.75))
+    if suite == "combined":
+        return sample_conditions(k_place, 1.0, track_length_m, track_width_m, cfg)
+    if suite == "ice":
+        return base._replace(mu_dry=f(c.mu_dry.ood), mu_base=f(c.mu_dry.ood))
+    if suite == "extreme_lag":
+        return base._replace(
+            steer_tau_s=f(c.steer_tau_s.ood), delay_steps=jnp.int32(c.delay_ood_steps)
+        )
+    if suite == "noisy_sensors":
+        return base._replace(obs_noise=f(c.obs_noise.ood))
+    if suite == "very_heavy":
+        return base._replace(mass_mult=f(c.mass_mult.ood))
     raise ValueError(f"unknown suite {suite!r}")
+
+
+IN_DISTRIBUTION_SUITES = ("dry", "wet", "puddles", "wind", "worn", "laggy", "heavy", "combined")
+OOD_SUITES = ("ice", "extreme_lag", "noisy_sensors", "very_heavy")
+SUITES = IN_DISTRIBUTION_SUITES + OOD_SUITES

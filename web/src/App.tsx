@@ -21,6 +21,9 @@ export default function App() {
             <NavLink to="/playground" className="navlink">
               {strings.nav.playground}
             </NavLink>
+            <NavLink to="/results" className="navlink">
+              {strings.nav.results}
+            </NavLink>
           </div>
           <a
             href={REPO_URL}

@@ -16,8 +16,10 @@ import { useLiveSim } from '../hooks/useLiveSim.ts'
 
 const HERO_CARS = 48
 const INITIAL_RAIN = 0.4
+/** Story steps that are live on the site (0-based): physics engine, curriculum. */
+const BUILT_STEPS = [0, 2]
 
-/** Home: live hero + the build story (SPEC 10.2). Interim copy until the trained drivers land. */
+/** Home: live hero with self-taught cars + the build story (SPEC 10.2). */
 export default function Home() {
   const panelRef = useRef<HTMLDivElement | null>(null)
   // Pick the showcase track whose shape best fits the space next to the text (desktop) or the
@@ -39,7 +41,10 @@ export default function Home() {
     conditions: { rain: INITIAL_RAIN },
     autoPuddles: true,
     layout: 'grid',
-    driver: 'scripted',
+    // The adaptive student when this build has it (falls back to the best shipped driver).
+    // One ensemble member keeps 48 cars light enough for phones.
+    driver: 'student',
+    ensembleMembers: 1,
     intro: true,
     seed: 7,
     fitInsetLeft: () => {
@@ -136,7 +141,7 @@ function Story() {
       <p className="mt-3 max-w-[68ch] text-text-2">{strings.story.intro}</p>
       <ol className="mt-12 grid gap-x-12 gap-y-10 md:grid-cols-2">
         {steps.map((step, i) => {
-          const built = i === 0
+          const built = BUILT_STEPS.includes(i)
           const body =
             i === 0
               ? head

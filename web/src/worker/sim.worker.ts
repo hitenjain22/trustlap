@@ -2,10 +2,14 @@
  * Simulation worker (SPEC 10.6): runs the environment and the drivers off the main thread
  * at a fixed 20 Hz, and posts Float32Array snapshots for the renderer to interpolate.
  *
- * Browser driving is continuous: a finished lap rolls over, and a crashed car fades for
- * 0.6 s, then respawns on the centerline a little behind where it left the road.
+ * Drivers: the scripted baseline, or exported neural networks (batched over all cars that
+ * use the same network). Browser driving is continuous: a finished lap rolls over, and a
+ * crashed car fades for 0.6 s, then respawns on the centerline a little behind.
  */
 import * as Comlink from 'comlink'
+import { ActorPolicy } from '../policy/actor.ts'
+import { StudentEnsemble } from '../policy/ensemble.ts'
+import { loadNetwork } from '../policy/loader.ts'
 import type { SimConfig } from '../sim/config.ts'
 import {
   layoutPuddles,
@@ -19,10 +23,13 @@ import { axleGrip } from '../sim/dynamics.ts'
 import {
   coreStep,
   createEnvState,
+  createObservation,
   createStepInfo,
+  observe,
   placePuddles,
   resetEnvState,
   type EnvState,
+  type Observation,
 } from '../sim/env.ts'
 import { PCG32 } from '../sim/rng.ts'
 import { scriptedAction } from '../sim/scripted.ts'
@@ -30,9 +37,11 @@ import { generateTrack, toTrackData, type TrackData } from '../sim/track.ts'
 import {
   CarField,
   CarFlag,
+  DRIVER_KINDS,
   HEADER,
   STRIDE,
   type ConditionValues,
+  type DriverKind,
   type SimApi,
   type SimInit,
   type TrackGeometry,
@@ -43,13 +52,23 @@ const MAX_CATCH_UP = 4
 const RESPAWN_STEPS = 12 // 0.6 s fade before a crashed car comes back
 const RESPAWN_BACK_M = 30
 const RESPAWN_SPEED_MPS = 8
+const GRID_ROW_M = 9
+const GRID_SIDE_M = 2.5
 
 interface Driver {
+  kind: DriverKind
+  ghost: boolean
   state: EnvState
   scripted: SimConfig['scripted']
   respawnIn: number // steps left while crashed, 0 = driving
   lapFlag: boolean
   laps: number
+  /** Student estimates for telemetry (NaN for other drivers). */
+  muHat: Float32Array
+  uncertainty: number
+  /** Per-car spread of power and mass (a field of one driver) so identical drivers don't lockstep. */
+  powerScale: number
+  massScale: number
 }
 
 let cfg: SimConfig
@@ -58,18 +77,25 @@ let trackSeed = 0
 let drivers: Driver[] = []
 let shared: Conditions // puddle arrays and condition values shared by every car
 let values: ConditionValues
-let layout: SimInit['layout'] = 'spread'
-let autoPuddles = false
+let opts: SimInit
 let rng = new PCG32(0)
 let speedMultiplier = 1
 let paused = false
 let simStep = 0
 let crashes = 0
 let listener: ((snapshot: Float32Array) => void) | null = null
+let obs: Observation
+const policies = new Map<DriverKind, ActorPolicy>()
+let ensemble: StudentEnsemble | null = null
+let histBatch = new Float32Array(0)
 const pool: Float32Array[] = []
 const info = createStepInfo()
 const action = new Float32Array(2)
 const grip = new Float64Array(2)
+let obsBatch = new Float32Array(0)
+let privBatch = new Float32Array(0)
+let actBatch = new Float32Array(0)
+let noise = new Float32Array(0)
 
 const defaults = (c: SimConfig): ConditionValues => ({
   rain: 0,
@@ -88,20 +114,49 @@ const defaults = (c: SimConfig): ConditionValues => ({
 })
 
 /** Copy the UI's condition values into a car's Conditions (puddle arrays are shared). */
-function applyValues(cond: Conditions): void {
+function applyValues(cond: Conditions, d?: Pick<Driver, 'powerScale' | 'massScale'>): void {
   setRain(cond, values.rain, cfg)
   const dir = (values.windDirDeg * Math.PI) / 180
   cond.windMps[0] = values.windMps * Math.cos(dir)
   cond.windMps[1] = values.windMps * Math.sin(dir)
   cond.gustSigmaMps = values.gustMps
-  cond.massMult = values.massMult
-  cond.powerMult = values.powerMult
+  cond.massMult = values.massMult * (d?.massScale ?? 1)
+  cond.powerMult = values.powerMult * (d?.powerScale ?? 1)
   cond.brakeMult = values.brakeMult
   cond.dragAreaM2 = values.dragAreaM2
   cond.wearPerKm = values.wearPerKm
   cond.steerTauS = values.steerTauS
   cond.delaySteps = values.delaySteps
   cond.obsNoise = values.obsNoise
+}
+
+async function ensurePolicies(kinds: DriverKind[]): Promise<void> {
+  const unique = [...new Set(kinds)]
+  const needed = unique.filter((k) => (k === 'blind' || k === 'teacher') && !policies.has(k))
+  const loaded = await Promise.all(needed.map((k) => loadNetwork(opts.artifactBase, k)))
+  loaded.forEach((net, i) => policies.set(needed[i]!, new ActorPolicy(net)))
+  if (unique.includes('student') && !ensemble) {
+    const count = Math.max(1, opts.studentMembers)
+    const [teacher, ...students] = await Promise.all([
+      loadNetwork(opts.artifactBase, 'teacher'),
+      ...Array.from({ length: count }, (_, k) => loadNetwork(opts.artifactBase, `student_${k}`)),
+    ])
+    ensemble = new StudentEnsemble(teacher!, students)
+  }
+}
+
+/** Calibrated crash probability from ensemble disagreement (piecewise-linear table). */
+function crashProbability(u: number): number {
+  const table = opts.calibration
+  if (!table || table.u.length === 0) return NaN
+  const xs = table.u
+  const ps = table.p
+  if (u <= xs[0]!) return ps[0]!
+  for (let i = 1; i < xs.length; i++) {
+    if (u <= xs[i]!)
+      return ps[i - 1]! + ((ps[i]! - ps[i - 1]!) * (u - xs[i - 1]!)) / (xs[i]! - xs[i - 1]!)
+  }
+  return ps[ps.length - 1]!
 }
 
 function buildTrack(seed: number): TrackGeometry {
@@ -137,15 +192,16 @@ function geometry(): TrackGeometry {
 }
 
 /** A per-car copy of the shared conditions that reuses the shared puddle arrays. */
-function carConditions(): Conditions {
+function carConditions(d: Pick<Driver, 'powerScale' | 'massScale'>): Conditions {
   const cond: Conditions = { ...shared, windMps: new Float32Array(2) }
-  applyValues(cond)
+  applyValues(cond, d)
   return cond
 }
 
-/** Slightly different driving styles so the cars spread out and overtake. */
-function driverStyle(): SimConfig['scripted'] {
+/** Slightly different scripted styles so a scripted field spreads out instead of lockstepping. */
+function scriptedStyle(vary: boolean): SimConfig['scripted'] {
   const sc = cfg.scripted
+  if (!vary) return sc
   return {
     ...sc,
     grip_use: sc.grip_use * rng.nextRange(0.86, 1.0),
@@ -154,24 +210,116 @@ function driverStyle(): SimConfig['scripted'] {
   }
 }
 
-function placeCars(n: number): void {
-  drivers = []
-  for (let i = 0; i < n; i++) {
-    const state = createEnvState(cfg, carConditions())
-    const startS = layout === 'spread' ? (i * track.lengthM) / n : -i * 8
-    resetEnvState(state, track, startS, layout === 'spread' ? 15 : cfg.episode.eval_speed_mps)
-    drivers.push({ state, scripted: driverStyle(), respawnIn: 0, lapFlag: false, laps: 0 })
-  }
+function placeCars(): void {
+  const n = opts.nCars
+  const roster: { kind: DriverKind; ghost: boolean }[] = []
+  for (let i = 0; i < n; i++) roster.push({ kind: opts.driver, ghost: false })
+  for (const g of opts.ghosts) if (g !== opts.driver) roster.push({ kind: g, ghost: true })
+  const spread = opts.layout === 'spread'
+  drivers = roster.map(({ kind, ghost }, i) => {
+    // A field of identical drivers gets slightly different cars (within the training ranges).
+    const field = n > 1 && !ghost
+    const scales = {
+      powerScale: field ? rng.nextRange(0.94, 1.0) : 1,
+      massScale: field ? rng.nextRange(1.0, 1.06) : 1,
+    }
+    const state = createEnvState(cfg, carConditions(scales))
+    // Ghosts start exactly with the first car so they race it like for like.
+    const slot = ghost ? 0 : i
+    const startS = spread ? (slot * track.lengthM) / n : -Math.floor(slot / 2) * GRID_ROW_M
+    resetEnvState(state, track, startS, spread ? 15 : cfg.episode.eval_speed_mps)
+    if (!spread && n > 1 && !ghost) {
+      // Two-wide grid: even slots on the right, odd on the left.
+      const side = slot % 2 === 0 ? -1 : 1
+      state.car.xM = Math.fround(state.car.xM - side * GRID_SIDE_M * Math.sin(state.car.yawRad))
+      state.car.yM = Math.fround(state.car.yM + side * GRID_SIDE_M * Math.cos(state.car.yawRad))
+    }
+    return {
+      kind,
+      ghost,
+      state,
+      scripted: scriptedStyle(field),
+      respawnIn: 0,
+      lapFlag: false,
+      laps: 0,
+      muHat: new Float32Array([NaN, NaN]),
+      uncertainty: NaN,
+      ...scales,
+    }
+  })
   simStep = 0
   crashes = 0
 }
 
 function respawn(d: Driver): void {
-  const s = d.state.sM - RESPAWN_BACK_M
-  resetEnvState(d.state, track, s, RESPAWN_SPEED_MPS)
+  resetEnvState(d.state, track, d.state.sM - RESPAWN_BACK_M, RESPAWN_SPEED_MPS)
+}
+
+/** Standard normals for the sensor-noise slider (AI drivers only); null when noise is off. */
+function sensorNoise(cond: Conditions): Float32Array | null {
+  if (cond.obsNoise <= 0) return null
+  const size = cfg.obs.policy_size - 1
+  if (noise.length !== size) noise = new Float32Array(size)
+  for (let k = 0; k < size; k++) noise[k] = rng.nextNormal()
+  return noise
+}
+
+/** Actions for every network-driven car, batched per network → actBatch, indexed via `slot`. */
+const slot = new Map<Driver, number>()
+function networkActions(): void {
+  const d = cfg.obs.policy_size
+  const p = cfg.obs.privileged_size
+  slot.clear()
+  let offset = 0
+  for (const [kind, policy] of policies) {
+    const cars = drivers.filter((x) => x.kind === kind && x.respawnIn === 0)
+    if (cars.length === 0) continue
+    if (obsBatch.length < cars.length * d) obsBatch = new Float32Array(cars.length * d)
+    if (privBatch.length < cars.length * p) privBatch = new Float32Array(cars.length * p)
+    if (actBatch.length < 2 * (offset + cars.length)) {
+      const grown = new Float32Array(2 * (offset + cars.length))
+      grown.set(actBatch.subarray(0, 2 * offset))
+      actBatch = grown
+    }
+    cars.forEach((car, b) => {
+      observe(car.state, track, sensorNoise(car.state.cond), cfg, obs)
+      obsBatch.set(obs.policy, b * d)
+      privBatch.set(obs.privileged, b * p)
+      slot.set(car, offset + b)
+    })
+    policy.act(obsBatch, cars.length, actBatch.subarray(2 * offset), privBatch)
+    offset += cars.length
+  }
+  if (!ensemble) return
+  const students = drivers.filter((x) => x.kind === 'student' && x.respawnIn === 0)
+  if (students.length === 0) return
+  const n = students.length
+  const h = cfg.obs.history_size
+  if (obsBatch.length < n * d) obsBatch = new Float32Array(n * d)
+  if (histBatch.length < n * h) histBatch = new Float32Array(n * h)
+  if (actBatch.length < 2 * (offset + n)) {
+    const grown = new Float32Array(2 * (offset + n))
+    grown.set(actBatch.subarray(0, 2 * offset))
+    actBatch = grown
+  }
+  students.forEach((car, b) => {
+    observe(car.state, track, sensorNoise(car.state.cond), cfg, obs)
+    obsBatch.set(obs.policy, b * d)
+    histBatch.set(car.state.history, b * h)
+    slot.set(car, offset + b)
+  })
+  const members = opts.ensembleMembers ?? ensemble.size
+  const out = ensemble.act(obsBatch, histBatch, n, members, members > 1)
+  actBatch.set(out.actions.subarray(0, 2 * n), 2 * offset)
+  students.forEach((car, b) => {
+    car.muHat[0] = out.gripMean[2 * b]!
+    car.muHat[1] = out.gripMean[2 * b + 1]!
+    car.uncertainty = members > 1 ? out.uncertainty[b]! : NaN
+  })
 }
 
 function step(): void {
+  networkActions()
   for (const d of drivers) {
     d.lapFlag = false
     if (d.respawnIn > 0) {
@@ -179,9 +327,16 @@ function step(): void {
       if (d.respawnIn === 0) respawn(d)
       continue
     }
-    scriptedAction(d.state, track, cfg, action, d.scripted)
-    const gx = d.state.cond.gustSigmaMps > 0 ? rng.nextNormal() : 0
-    const gy = d.state.cond.gustSigmaMps > 0 ? rng.nextNormal() : 0
+    if (d.kind === 'scripted') {
+      scriptedAction(d.state, track, cfg, action, d.scripted)
+    } else {
+      const b = slot.get(d) ?? -1
+      action[0] = b >= 0 ? actBatch[2 * b]! : 0
+      action[1] = b >= 0 ? actBatch[2 * b + 1]! : 0
+    }
+    const gusty = d.state.cond.gustSigmaMps > 0
+    const gx = gusty ? rng.nextNormal() : 0
+    const gy = gusty ? rng.nextNormal() : 0
     coreStep(d.state, action[0]!, action[1]!, gx, gy, track, cfg, info)
     if (info.lapCompleted) {
       d.state.progressM -= track.lengthM // keep driving: the next lap starts now
@@ -189,7 +344,7 @@ function step(): void {
       d.laps++
     } else if (info.terminated) {
       d.respawnIn = RESPAWN_STEPS
-      crashes++
+      if (!d.ghost) crashes++
     }
     if (d.state.steps >= cfg.episode.max_steps - 1) d.state.steps = 0 // no time limit in the browser
   }
@@ -202,7 +357,7 @@ function snapshot(): Float32Array {
   if (!buf || buf.length !== size) buf = new Float32Array(size)
   buf[0] = simStep * (STEP_MS / 1000)
   buf[1] = simStep
-  buf[2] = 1 + drivers.reduce((m, d) => Math.max(m, d.laps), 0)
+  buf[2] = 1 + drivers.reduce((m, d) => (d.ghost ? m : Math.max(m, d.laps)), 0)
   buf[3] = crashes
   drivers.forEach((d, i) => {
     const o = HEADER + i * STRIDE
@@ -218,11 +373,15 @@ function snapshot(): Float32Array {
     axleGrip(car, d.state.cond, cfg, grip)
     buf[o + CarField.MuFront] = grip[0]!
     buf[o + CarField.MuRear] = grip[1]!
-    buf[o + CarField.MuHatFront] = NaN
-    buf[o + CarField.MuHatRear] = NaN
-    buf[o + CarField.PCrash] = NaN
+    buf[o + CarField.MuHatFront] = d.muHat[0]!
+    buf[o + CarField.MuHatRear] = d.muHat[1]!
+    buf[o + CarField.PCrash] = Number.isNaN(d.uncertainty) ? NaN : crashProbability(d.uncertainty)
     buf[o + CarField.Flags] =
-      (d.respawnIn > 0 ? CarFlag.Crashed : 0) | (d.lapFlag ? CarFlag.Lap : 0)
+      (d.respawnIn > 0 ? CarFlag.Crashed : 0) |
+      (d.lapFlag ? CarFlag.Lap : 0) |
+      (d.ghost ? CarFlag.Ghost : 0) |
+      (i === 0 ? CarFlag.Focused : 0)
+    buf[o + CarField.Driver] = DRIVER_KINDS.indexOf(d.kind)
   })
   return buf
 }
@@ -258,32 +417,40 @@ function start(): void {
 }
 
 const api: SimApi = {
-  async init(opts: SimInit) {
-    cfg = opts.config
-    rng = new PCG32(opts.seed)
-    layout = opts.layout
-    autoPuddles = opts.autoPuddles
-    values = { ...defaults(cfg), ...opts.conditions }
-    if (autoPuddles) values.puddles = puddlesForRain(values.rain, cfg)
-    const geo = buildTrack(opts.trackSeed)
-    placeCars(opts.nCars)
+  async init(o: SimInit) {
+    opts = o
+    cfg = o.config
+    obs = createObservation(cfg)
+    rng = new PCG32(o.seed)
+    values = { ...defaults(cfg), ...o.conditions }
+    if (o.autoPuddles) values.puddles = puddlesForRain(values.rain, cfg)
+    await ensurePolicies([o.driver, ...o.ghosts])
+    const geo = buildTrack(o.trackSeed)
+    placeCars()
     start()
     return geo
   },
   async setTrack(seed: number) {
     const geo = buildTrack(seed)
-    placeCars(drivers.length)
+    placeCars()
     return geo
   },
   async setConditions(partial) {
     values = { ...values, ...partial }
-    if (autoPuddles && partial.rain !== undefined) values.puddles = puddlesForRain(values.rain, cfg)
+    if (opts.autoPuddles && partial.rain !== undefined) {
+      values.puddles = puddlesForRain(values.rain, cfg)
+    }
     setActivePuddles(shared, values.puddles)
-    for (const d of drivers) applyValues(d.state.cond)
+    for (const d of drivers) applyValues(d.state.cond, d)
     return values.puddles
   },
+  async setDrivers(driver, ghosts) {
+    await ensurePolicies([driver, ...ghosts])
+    opts = { ...opts, driver, ghosts }
+    placeCars()
+  },
   async reset() {
-    placeCars(drivers.length)
+    placeCars()
   },
   async setSpeed(multiplier: number) {
     speedMultiplier = multiplier

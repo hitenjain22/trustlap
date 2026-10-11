@@ -61,14 +61,17 @@ def bench_jax(
         bank = jax.device_put(env.bank, device)
         keys = jax.random.split(jax.random.key(0), n_cars)
         difficulty = jnp.ones(n_cars)
-        state, _ = env._reset(keys, difficulty, bank)
+        stretch = jnp.zeros(n_cars, bool)
+        state, _ = env._reset(keys, difficulty, stretch, bank)
 
         @jax.jit
         def run(state: EnvState, key: jax.Array) -> EnvState:
             def body(s: EnvState, k: jax.Array) -> tuple[EnvState, None]:
                 ka, ks = jax.random.split(k)
                 actions = jax.random.uniform(ka, (n_cars, 2), minval=-1.0, maxval=1.0)
-                s, *_ = env._step(s, actions, jax.random.split(ks, n_cars), difficulty, bank)
+                s, *_ = env._step(
+                    s, actions, jax.random.split(ks, n_cars), difficulty, stretch, bank
+                )
                 return s, None
 
             return jax.lax.scan(body, state, jax.random.split(key, scan_steps))[0]

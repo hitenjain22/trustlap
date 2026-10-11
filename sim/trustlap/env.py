@@ -68,6 +68,7 @@ class StepInfo(NamedTuple):
     mu_rear: Any
     steps: Any  # int32, steps this episode including this one
     progress_m: Any
+    nan_reset: Any = False  # bool: state went non-finite and the car was reset (SPEC 6.3.5)
 
 
 class Observation(NamedTuple):
@@ -435,8 +436,8 @@ class Env:
         self.cfg = cfg
         self.bank = TrackBank(*(jnp.asarray(a) for a in bank))
         self.n_tracks = int(bank.width.shape[0])
-        self._reset = jax.jit(jax.vmap(self._reset_one, in_axes=(0, 0, None)))
-        self._step = jax.jit(jax.vmap(self._step_one, in_axes=(0, 0, 0, 0, None)))
+        self._reset = jax.jit(jax.vmap(self._reset_one, in_axes=(0, 0, 0, None)))
+        self._step = jax.jit(jax.vmap(self._step_one, in_axes=(0, 0, 0, 0, 0, None)))
         self._eval_reset = jax.jit(jax.vmap(self._eval_reset_one, in_axes=(0, 0, 0, None)))
 
     # One car ---------------------------------------------------------------------------------
@@ -448,9 +449,10 @@ class Env:
         return state._replace(last_proprio=sensed), obs
 
     def _reset_one(
-        self, key: jax.Array, difficulty: jax.Array, bank: TrackBank
+        self, key: jax.Array, difficulty: jax.Array, stretch: jax.Array, bank: TrackBank
     ) -> tuple[EnvState, Observation]:
-        """Training reset: random track, random start, speed U(5, 20) m/s, conditions at d."""
+        """Training reset: random track, random start, speed U(5, 20) m/s, conditions at d
+        (with one parameter at the harder edge of its range when `stretch`)."""
         ep = self.cfg.episode
         k_track, k_start, k_speed, k_cond, k_obs = jax.random.split(key, 5)
         tid = jax.random.randint(k_track, (), 0, self.n_tracks)
@@ -459,7 +461,7 @@ class Env:
         speed = jax.random.uniform(
             k_speed, (), minval=ep.train_speed_min_mps, maxval=ep.train_speed_max_mps
         )
-        cond = sample_conditions(k_cond, difficulty, length, bank.width[tid], self.cfg)
+        cond = sample_conditions(k_cond, difficulty, length, bank.width[tid], self.cfg, stretch)
         state = start_state(bank, tid, start_s, speed, cond, difficulty, self.cfg, jnp)
         return self._observe(state, k_obs, bank)
 
@@ -478,6 +480,7 @@ class Env:
         action: jax.Array,
         key: jax.Array,
         difficulty: jax.Array,
+        stretch: jax.Array,
         bank: TrackBank,
     ) -> tuple[EnvState, Observation, jax.Array, StepInfo, Observation]:
         k_gust, k_obs, k_reset = jax.random.split(key, 3)
@@ -485,8 +488,15 @@ class Env:
             state, action, jax.random.normal(k_gust, (2,)), bank, self.cfg, jnp
         )
         state, obs = self._observe(state, k_obs, bank)
+        # NaN guard (SPEC 6.3.5): a non-finite car is reset and counted, never trained on.
+        leaves = [jnp.all(jnp.isfinite(x)) for x in jax.tree.leaves(state.car)]
+        finite = jnp.all(jnp.stack(leaves))
+        finite = finite & jnp.all(jnp.isfinite(obs.policy)) & jnp.all(jnp.isfinite(obs.privileged))
+        reward = jnp.where(finite, reward, 0.0)
+        info = info._replace(nan_reset=~finite, terminated=info.terminated | ~finite)
+        obs = jax.tree.map(lambda x: jnp.where(finite, x, 0.0), obs)
         done = info.terminated | info.truncated
-        reset_state, reset_obs = self._reset_one(k_reset, difficulty, bank)
+        reset_state, reset_obs = self._reset_one(k_reset, difficulty, stretch, bank)
         pick = lambda fresh, old: jnp.where(done, fresh, old)  # noqa: E731
         return (
             jax.tree.map(pick, reset_state, state),
@@ -497,9 +507,12 @@ class Env:
         )
 
     # Batched ---------------------------------------------------------------------------------
-    def reset(self, keys: jax.Array, difficulty: jax.Array) -> tuple[EnvState, Observation]:
-        """Reset N cars. `keys` [N] (split them yourself), `difficulty` [N]."""
-        return self._reset(keys, difficulty, self.bank)
+    def reset(
+        self, keys: jax.Array, difficulty: jax.Array, stretch: jax.Array | None = None
+    ) -> tuple[EnvState, Observation]:
+        """Reset N cars. `keys` [N] (split them yourself), `difficulty` [N], `stretch` [N]."""
+        stretch = jnp.zeros(jnp.shape(difficulty), bool) if stretch is None else stretch
+        return self._reset(keys, difficulty, stretch, self.bank)
 
     def eval_reset(
         self, keys: jax.Array, track_ids: jax.Array, conds: Conditions
@@ -508,11 +521,18 @@ class Env:
         return self._eval_reset(keys, track_ids, conds, self.bank)
 
     def step(
-        self, state: EnvState, actions: jax.Array, keys: jax.Array, difficulty: jax.Array
+        self,
+        state: EnvState,
+        actions: jax.Array,
+        keys: jax.Array,
+        difficulty: jax.Array,
+        stretch: jax.Array | None = None,
     ) -> tuple[EnvState, Observation, jax.Array, StepInfo, Observation]:
         """Step N cars with auto-reset. Returns (state, obs, reward, info, pre-reset obs).
 
         A car whose episode ended this step comes back already reset (new track, start and
-        conditions drawn at `difficulty` [N]); `info` describes the step that ended it.
+        conditions drawn at `difficulty` [N], stretched where `stretch` [N]); `info`
+        describes the step that ended it.
         """
-        return self._step(state, actions, keys, difficulty, self.bank)
+        stretch = jnp.zeros(jnp.shape(difficulty), bool) if stretch is None else stretch
+        return self._step(state, actions, keys, difficulty, stretch, self.bank)

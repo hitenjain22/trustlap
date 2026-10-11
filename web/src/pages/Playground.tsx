@@ -7,9 +7,10 @@ import { strings } from '../copy/strings.ts'
 import { loadShowcase, loadSimConfig, type ShowcaseTrack } from '../data/artifacts.ts'
 import { useLiveSim } from '../hooks/useLiveSim.ts'
 import type { SimConfig } from '../sim/config.ts'
-import type { ConditionValues } from '../worker/protocol.ts'
+import type { ConditionValues, DriverKind } from '../worker/protocol.ts'
 
-const PLAYGROUND_CARS = 3
+const PLAYGROUND_CARS = 1 // the focused car; ghosts are added per driver
+const DRIVER_ORDER: DriverKind[] = ['student', 'blind', 'teacher', 'scripted'] // SPEC 10.2
 const SPEEDS = [0.5, 1, 2] as const
 
 type Key = keyof ConditionValues
@@ -147,7 +148,7 @@ function controlsFrom(cfg: SimConfig): Record<'weather' | 'car' | 'electronics',
   }
 }
 
-/** Playground skeleton (SPEC 10.2): live canvas + condition sliders. More arrives with the AI drivers. */
+/** Playground (SPEC 10.2): live canvas, driver + ghosts, condition sliders. Telemetry lands in M5. */
 export default function Playground() {
   const [cfg, setCfg] = useState<SimConfig | null>(null)
   const [tracks, setTracks] = useState<ShowcaseTrack[]>([])
@@ -158,10 +159,26 @@ export default function Playground() {
     trackSeed: firstSeed,
     conditions: {},
     layout: 'grid',
-    driver: 'scripted',
+    driver: 'blind',
+    ghosts: ['scripted'],
+    showFocus: true,
     intro: false,
     seed: 3,
   })
+  const [driver, setDriver] = useState<DriverKind>('blind')
+  const [ghosts, setGhosts] = useState<DriverKind[]>(['scripted'])
+  const available = (d: DriverKind) => sim.status.available.includes(d)
+  const pickDriver = (d: DriverKind) => {
+    const g = ghosts.filter((x) => x !== d)
+    setDriver(d)
+    setGhosts(g)
+    void sim.setDrivers(d, g)
+  }
+  const toggleGhost = (d: DriverKind) => {
+    const g = ghosts.includes(d) ? ghosts.filter((x) => x !== d) : [...ghosts, d]
+    setGhosts(g)
+    void sim.setDrivers(driver, g)
+  }
   const [values, setValues] = useState<Partial<ConditionValues>>({})
   const [playing, setPlaying] = useState(true)
   const [speed, setSpeed] = useState<number>(1)
@@ -268,16 +285,37 @@ export default function Playground() {
         <div className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-2 text-[14px] md:px-6">
           <span className="label">{strings.playground.driver}</span>
           <div className="segmented" role="group" aria-label={strings.playground.driver}>
-            <button type="button" aria-pressed="true">
-              {strings.playground.drivers.scripted}
-            </button>
-            {(['student', 'blind', 'teacher'] as const).map((d) => (
-              <button key={d} type="button" disabled aria-pressed="false">
+            {DRIVER_ORDER.map((d) => (
+              <button
+                key={d}
+                type="button"
+                aria-pressed={driver === d}
+                disabled={!available(d)}
+                title={available(d) ? undefined : strings.playground.notTrainedYet}
+                onClick={() => pickDriver(d)}
+              >
+                <span className={`driver-swatch driver-swatch--${d}`} aria-hidden="true" />
                 {strings.playground.drivers[d]}
               </button>
             ))}
           </div>
-          <span className="text-text-3">{strings.playground.driversSoon}</span>
+          <span className="label">{strings.playground.ghosts}</span>
+          <div className="flex flex-wrap gap-2" role="group" aria-label={strings.playground.ghosts}>
+            {DRIVER_ORDER.filter((d) => d !== driver && available(d)).map((d) => (
+              <label key={d} className="chip">
+                <input
+                  type="checkbox"
+                  checked={ghosts.includes(d)}
+                  onChange={() => toggleGhost(d)}
+                />
+                <span
+                  className={`driver-swatch driver-swatch--${d} driver-swatch--ghost`}
+                  aria-hidden="true"
+                />
+                {strings.playground.drivers[d]}
+              </label>
+            ))}
+          </div>
         </div>
         <LiveCanvas
           canvasRef={sim.canvasRef}

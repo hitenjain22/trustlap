@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "artifact_version": "v1",
- "created_utc": "2026-10-11T09:27:58+00:00",
- "git_sha": "7c03609",
+ "created_utc": "2026-10-11T18:43:00+00:00",
+ "git_sha": "6bf66f2",
  "config_hash": "f832929f904b4565fe22441782b828b914233cbffa3adff08bcc9ec7c86732b7",
  "files": [
   {
@@ -16,9 +16,224 @@
    "sha256": "e056793af65c6b12c6fc5dc08c1efb1ca8b367b763a4cc5ebc14cb566d9f5aa7"
   },
   {
+   "path": "checkpoints/index.json",
+   "bytes": 1957,
+   "sha256": "a978945cb4eccf79ac7ca06f4fc289021be9555b1d23c1d8ad8bd4cba69fe39d"
+  },
+  {
+   "path": "checkpoints/teacher_00.bin",
+   "bytes": 160552,
+   "sha256": "86fb3cb85706e22326c99bd41dee2c4e37f7ce8fb0a7cab3b82619acc832c2e8"
+  },
+  {
+   "path": "checkpoints/teacher_00.json",
+   "bytes": 3484,
+   "sha256": "6ecdd86ac8d7a862d4ac7a6b918bd31304acf2932cb4e63a222644d1e5421a3a"
+  },
+  {
+   "path": "checkpoints/teacher_01.bin",
+   "bytes": 160552,
+   "sha256": "f51945b68c822494d160f4edad873ec17dfdc5e753defa0155cf23f990a0daf6"
+  },
+  {
+   "path": "checkpoints/teacher_01.json",
+   "bytes": 3486,
+   "sha256": "6c461cb73b7af87f6dc9a2d0bc52673295231b3067ba744062f51ebe0607d7de"
+  },
+  {
+   "path": "checkpoints/teacher_02.bin",
+   "bytes": 160552,
+   "sha256": "64fc385839f3693e494b7f86240e606358f99f571403e69428110feb00dd04cd"
+  },
+  {
+   "path": "checkpoints/teacher_02.json",
+   "bytes": 3530,
+   "sha256": "e348d5b81edc70de82111a85f2554ef922d078eafed53ce686ffdb0fc36e493f"
+  },
+  {
+   "path": "checkpoints/teacher_03.bin",
+   "bytes": 160552,
+   "sha256": "e982a71e7b23f1a6384b46304156f072f1d0aefdad20bdfafb0db272bb1d9b47"
+  },
+  {
+   "path": "checkpoints/teacher_03.json",
+   "bytes": 3535,
+   "sha256": "61ebeac732d474bd67e110ac5ab5adc4fe1f3bded5514dc52c3bd56cbc0dd8e8"
+  },
+  {
+   "path": "checkpoints/teacher_04.bin",
+   "bytes": 160552,
+   "sha256": "7fc0771898a995000e0a64467811e01d834801223967835696bb1dbe7fbfa800"
+  },
+  {
+   "path": "checkpoints/teacher_04.json",
+   "bytes": 3535,
+   "sha256": "94568ab715fe1479c65de31dd0941963e2946281e2dc0a8052f071ca62680fd7"
+  },
+  {
+   "path": "checkpoints/teacher_05.bin",
+   "bytes": 160552,
+   "sha256": "22f8b6428104cda522d42ab284e2d14a6b599cf0a6275b8054232b3588a031a1"
+  },
+  {
+   "path": "checkpoints/teacher_05.json",
+   "bytes": 3533,
+   "sha256": "904107021e6d04326dcda6b37110c27a49bdcc70688fcc75c3b53a6aebf96b6e"
+  },
+  {
+   "path": "checkpoints/teacher_06.bin",
+   "bytes": 160552,
+   "sha256": "d80a1d733f0386aa217393d9cb2acd79cd816b5decf5bdf26137cfc4c16712d2"
+  },
+  {
+   "path": "checkpoints/teacher_06.json",
+   "bytes": 3535,
+   "sha256": "b01a0f9f10ec7e6ecab1b7ffd8b331d680184e05ae6e1a5f09fc494cf95243c9"
+  },
+  {
+   "path": "checkpoints/teacher_07.bin",
+   "bytes": 160552,
+   "sha256": "b530df950a211f4c6a74cd075509ee03b428d451f7309c9062664531bfba7ae3"
+  },
+  {
+   "path": "checkpoints/teacher_07.json",
+   "bytes": 3538,
+   "sha256": "bc78cea3833ec3e7a9851fbdc72e01cc0c04b42faebaa61b31c3dc240bbc47b8"
+  },
+  {
+   "path": "checkpoints/teacher_08.bin",
+   "bytes": 160552,
+   "sha256": "c09943b0f645f2f19ac499ee2444837afedbb4ea22114caa63436dedb7d741d1"
+  },
+  {
+   "path": "checkpoints/teacher_08.json",
+   "bytes": 3549,
+   "sha256": "78eed69fc26922ed466c528d8d1ecb66b103d54d750f6ca6b9d1e67e6905dca7"
+  },
+  {
+   "path": "checkpoints/teacher_09.bin",
+   "bytes": 160552,
+   "sha256": "623ae0500b84b3a30749de686e17adbe977acb044ebb5551e4b7274d1c7cd290"
+  },
+  {
+   "path": "checkpoints/teacher_09.json",
+   "bytes": 3553,
+   "sha256": "ac6ca78b3d4e6ef780df8052d99c97d5b0d8c1815cda0161bc5811d93db33525"
+  },
+  {
+   "path": "checkpoints/teacher_10.bin",
+   "bytes": 160552,
+   "sha256": "ebf67f2de5ae83bed5ca7beef5632e5626290c3c1a774f590597d1d5cb9d8777"
+  },
+  {
+   "path": "checkpoints/teacher_10.json",
+   "bytes": 3549,
+   "sha256": "b2fde51d1db7af1a4164cf7f6d0b32e5de97d1974b81c9e18c2f9281d9766e1f"
+  },
+  {
+   "path": "checkpoints/teacher_11.bin",
+   "bytes": 160552,
+   "sha256": "4428cd2cfcbb5480f60a804f08da2bea6186b54242d8219498289640f93b0542"
+  },
+  {
+   "path": "checkpoints/teacher_11.json",
+   "bytes": 3545,
+   "sha256": "49cca6be6d412370ddeebcd133048ac0724efef799a9e214820050b51cac89b2"
+  },
+  {
    "path": "config.json",
    "bytes": 6943,
    "sha256": "5319d243d08680ce42880110c5b391b9c066ac2f63ed877bd7a9960e1e2e17b7"
+  },
+  {
+   "path": "curriculum.json",
+   "bytes": 18373,
+   "sha256": "a174f01ec18fc1e427ec27f02fd24ebdd912ea85b4819b148af51f0649347473"
+  },
+  {
+   "path": "curriculum_blind.json",
+   "bytes": 22128,
+   "sha256": "1a40b3a16d79ff534d24f98fa7553292ac167d765dab6fc7730550e01f681975"
+  },
+  {
+   "path": "lineage.json",
+   "bytes": 8709,
+   "sha256": "abc0917eee0d15995e63720f529342a1e9444d12b01149338c14ef2a74b61e36"
+  },
+  {
+   "path": "policies/blind.bin",
+   "bytes": 150536,
+   "sha256": "11b553e8463e3556fced2e2f128120adf5d7484e5e497c4bc21bf4e82f9196ce"
+  },
+  {
+   "path": "policies/blind.json",
+   "bytes": 2479,
+   "sha256": "80594949bf8ed1c97ce1a232191fa77d7faf53f22931fae854e963777128f67e"
+  },
+  {
+   "path": "policies/student_0.bin",
+   "bytes": 342568,
+   "sha256": "7f60046b0a1137f097ac71a811c0ef2a7ba17d622cc6d6b942314cebba560f34"
+  },
+  {
+   "path": "policies/student_0.json",
+   "bytes": 1015,
+   "sha256": "ecb2709d6acc2533eb30eff79f92f5e24cf9fe056176da2f3a14854b704e474a"
+  },
+  {
+   "path": "policies/student_1.bin",
+   "bytes": 342568,
+   "sha256": "ad43320532235cd4a96cad5fdbc4fd674c3f3457f0a5603a8b4984f0cd80293a"
+  },
+  {
+   "path": "policies/student_1.json",
+   "bytes": 1015,
+   "sha256": "3f847b90a129d36025cdeef1969789569b61fe43132e40189c6e674fd143ec1c"
+  },
+  {
+   "path": "policies/student_2.bin",
+   "bytes": 342568,
+   "sha256": "608d358bc9fc49bedd209632dce233964789da9f593200e17a3b1c1a848b49a7"
+  },
+  {
+   "path": "policies/student_2.json",
+   "bytes": 1015,
+   "sha256": "be05ba6b95b6e3faceb52bd3c291285259bcc25a6dd74ae48074af080ea38ffb"
+  },
+  {
+   "path": "policies/student_3.bin",
+   "bytes": 342568,
+   "sha256": "405ea0138dd9053e6a002662bccfba74cbf0b4533a524e7259e6603c7d091242"
+  },
+  {
+   "path": "policies/student_3.json",
+   "bytes": 1015,
+   "sha256": "43cef9a5c82d2532990128d5ac2f960f6ff306882fd7737068c96f2fa50f5908"
+  },
+  {
+   "path": "policies/student_4.bin",
+   "bytes": 342568,
+   "sha256": "e366ef35236fbb33de0157afeaffd73271e9bde73307ca68cbc157345974f714"
+  },
+  {
+   "path": "policies/student_4.json",
+   "bytes": 1015,
+   "sha256": "49b329685a735ffbc69a5385f635693824083ecee94eae9b28b692ad97020f81"
+  },
+  {
+   "path": "policies/teacher.bin",
+   "bytes": 160552,
+   "sha256": "a6a10c2da6f407e05ff1404e004991f3de8d93b93f7744c1d8529807601d4c80"
+  },
+  {
+   "path": "policies/teacher.json",
+   "bytes": 3481,
+   "sha256": "0d7f144e97c49c7981da46da1e7ee931f61d6f76c6eacf9d603f729c9dca80c4"
+  },
+  {
+   "path": "population_curves.json",
+   "bytes": 99214,
+   "sha256": "ef4f7028afd336ece2690905868f2bccafb4b3a0c80ed60f7e36e2bb18ea7d55"
   },
   {
    "path": "tracks/showcase.json",

@@ -3,9 +3,16 @@
  * last two 20 Hz snapshots from the worker. Per frame it blits ONE cached background (static
  * layers + wet sheen + skid marks), then draws puddles, cars and rain on top.
  */
-import { CarField, CarFlag, HEADER, STRIDE, type TrackGeometry } from '../worker/protocol.ts'
+import {
+  CarField,
+  CarFlag,
+  DRIVER_KINDS,
+  HEADER,
+  STRIDE,
+  type TrackGeometry,
+} from '../worker/protocol.ts'
 import { fitCamera, type Camera } from './camera.ts'
-import { carScale, drawCars, drawHeadlights, type CarPose, type DriverKind } from './layers/cars.ts'
+import { carScale, drawCars, drawHeadlights, type CarPose } from './layers/cars.ts'
 import { drawPuddles } from './layers/puddles.ts'
 import { RainLayer } from './layers/rain.ts'
 import { SkidLayer } from './layers/skids.ts'
@@ -18,7 +25,8 @@ const SKID_LIFETIME_MS = 60_000
 
 export interface RendererOptions {
   reducedMotion: boolean
-  driver: DriverKind
+  /** Outline the focused car (Playground); off for the hero. */
+  showFocus: boolean
   /** Called once if the first 2 s average more than 20 ms per frame. */
   onSlow?: () => void
   /** Keep the track clear of overlaid UI: CSS px to leave free on the left (e.g. hero text). */
@@ -162,7 +170,17 @@ export class Renderer {
     const prev = this.prev && this.prev.length === curr.length ? this.prev : curr
     const n = (curr.length - HEADER) / STRIDE
     const t = Math.min(1, Math.max(0, ((performance.now() - this.currAt) * this.speed) / STEP_MS))
-    while (this.poses.length < n) this.poses.push({ x: 0, y: 0, yaw: 0, alpha: 1 })
+    while (this.poses.length < n) {
+      this.poses.push({
+        x: 0,
+        y: 0,
+        yaw: 0,
+        alpha: 1,
+        kind: 'scripted',
+        ghost: false,
+        focused: false,
+      })
+    }
     this.poses.length = n
     for (let i = 0; i < n; i++) {
       const o = HEADER + i * STRIDE
@@ -172,7 +190,11 @@ export class Renderer {
       p.x = prev[o + CarField.X]! + (curr[o + CarField.X]! - prev[o + CarField.X]!) * tt
       p.y = prev[o + CarField.Y]! + (curr[o + CarField.Y]! - prev[o + CarField.Y]!) * tt
       p.yaw = lerpAngle(prev[o + CarField.Yaw]!, curr[o + CarField.Yaw]!, tt)
-      p.alpha = curr[o + CarField.Flags]! & CarFlag.Crashed ? 0.35 : 1
+      const flags = curr[o + CarField.Flags]!
+      p.alpha = flags & CarFlag.Crashed ? 0.35 : 1
+      p.ghost = (flags & CarFlag.Ghost) !== 0
+      p.focused = (flags & CarFlag.Focused) !== 0
+      p.kind = DRIVER_KINDS[curr[o + CarField.Driver]!] ?? 'scripted'
     }
     return n
   }
@@ -237,9 +259,10 @@ export class Renderer {
     drawPuddles(ctx, geo, this.activePuddles, this.rain, this.cam, this.pal, now, motion)
     this.interpolatedPoses()
 
-    const k = carScale(this.cam, w / Math.max(1, this.canvas.clientWidth))
+    const dpr = w / Math.max(1, this.canvas.clientWidth)
+    const k = carScale(this.cam, dpr)
     if (this.rain > 0.3) drawHeadlights(ctx, this.poses, this.cam, this.pal, k)
-    drawCars(ctx, this.poses, this.opts.driver, this.cam, this.pal, k)
+    drawCars(ctx, this.poses, this.cam, this.pal, k, dpr, this.opts.showFocus)
 
     this.rainLayer.draw(ctx, this.rain, this.windX, motion ? Math.min(dt, 50) : 0, this.pal)
   }

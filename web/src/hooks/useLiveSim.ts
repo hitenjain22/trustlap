@@ -5,16 +5,26 @@
  */
 import * as Comlink from 'comlink'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { loadSimConfig } from '../data/artifacts.ts'
+import {
+  ARTIFACT_VERSION,
+  loadCalibration,
+  loadManifest,
+  loadSimConfig,
+  type Calibration,
+} from '../data/artifacts.ts'
 import { Renderer } from '../render/Renderer.ts'
-import type { DriverKind } from '../render/layers/cars.ts'
+import type { SimConfig } from '../sim/config.ts'
 import {
   CarField,
   CarFlag,
   HEADER,
   STRIDE,
   type ConditionValues,
+  type DriverKind,
+  availableDrivers,
+  studentCount,
   type SimApi,
+  type SimInit,
   type TrackGeometry,
 } from '../worker/protocol.ts'
 
@@ -25,6 +35,10 @@ export interface LiveSimOptions {
   conditions: Partial<ConditionValues>
   layout: 'spread' | 'grid'
   driver: DriverKind
+  ghosts?: DriverKind[]
+  showFocus?: boolean
+  /** How many students the student driver runs (1 = light, no crash-risk estimate). */
+  ensembleMembers?: number
   intro: boolean
   seed?: number
   autoPuddles?: boolean
@@ -38,6 +52,8 @@ export interface LiveSimStatus {
   crashes: number
   degraded: boolean
   track: TrackGeometry | null
+  /** Drivers this build ships (from the artifact manifest). */
+  available: DriverKind[]
 }
 
 const prefersReducedMotion = () =>
@@ -54,8 +70,11 @@ export function useLiveSim(opts: LiveSimOptions) {
     crashes: 0,
     degraded: false,
     track: null,
+    available: ['scripted'],
   })
   const initial = useRef(opts)
+  const valuesRef = useRef<Partial<ConditionValues>>({ ...opts.conditions })
+  const driversRef = useRef({ driver: opts.driver, ghosts: opts.ghosts ?? [] })
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -69,31 +88,44 @@ export function useLiveSim(opts: LiveSimOptions) {
     })
     const api = Comlink.wrap<SimApi>(worker)
     apiRef.current = api
-    let cfgRef: Awaited<ReturnType<typeof loadSimConfig>> | null = null
+    let cfgRef: SimConfig | null = null
+    let students = 0
+    let calibration: Calibration | null = null
+    // Built from the latest conditions and drivers, so a restart (slow device) keeps them.
+    const initArgs = (
+      cfg: SimConfig,
+      seed: number,
+      nCars: number,
+      layout: SimInit['layout'],
+    ): SimInit => ({
+      config: cfg,
+      trackSeed: seed,
+      nCars,
+      seed: o.seed ?? 1,
+      conditions: valuesRef.current,
+      layout,
+      autoPuddles: o.autoPuddles ?? false,
+      driver: driversRef.current.driver,
+      ghosts: driversRef.current.ghosts,
+      artifactBase: `${window.location.origin}/artifacts/${ARTIFACT_VERSION}`,
+      studentMembers: students,
+      ensembleMembers: o.ensembleMembers,
+      calibration: calibration ? { u: calibration.u, p: calibration.p } : undefined,
+    })
     let trackSeed = 0
     const renderer = new Renderer(canvas, {
       reducedMotion: reduced,
-      driver: o.driver,
+      showFocus: o.showFocus ?? false,
       fitInsetLeft: o.fitInsetLeft,
       onSlow: () => {
         // Halve the work on slow devices (SPEC 10.3) by restarting with half the cars.
         if (!cfgRef) return
         renderer.degrade()
         const half = Math.max(1, Math.floor(o.nCars / 2))
-        void api
-          .init({
-            config: cfgRef,
-            trackSeed: trackSeed,
-            nCars: half,
-            seed: o.seed ?? 1,
-            conditions: o.conditions,
-            layout: 'spread',
-            autoPuddles: o.autoPuddles ?? false,
-          })
-          .then((geo) => {
-            renderer.setTrack(geo, false)
-            setStatus((s) => ({ ...s, cars: half, degraded: true }))
-          })
+        void api.init(initArgs(cfgRef, trackSeed, half, 'spread')).then((geo) => {
+          renderer.setTrack(geo, false)
+          setStatus((s) => ({ ...s, cars: half, degraded: true }))
+        })
       },
     })
     rendererRef.current = renderer
@@ -108,10 +140,22 @@ export function useLiveSim(opts: LiveSimOptions) {
     const onVisibility = () => void (document.hidden ? api.pause() : api.resume())
     document.addEventListener('visibilitychange', onVisibility)
 
-    Promise.all([loadSimConfig(), Promise.resolve(o.trackSeed)])
-      .then(async ([cfg, seed]) => {
+    Promise.all([loadSimConfig(), Promise.resolve(o.trackSeed), loadManifest(), loadCalibration()])
+      .then(async ([cfg, seed, manifest, cal]) => {
         cfgRef = cfg
         trackSeed = seed
+        calibration = cal
+        const files = manifest.files.map((f) => f.path)
+        students = studentCount(files)
+        const available = availableDrivers(files)
+        // Fall back to the best shipped driver if the requested one isn't in this build.
+        const pick = (k: DriverKind) =>
+          available.includes(k) ? k : available[available.length - 1]!
+        driversRef.current = {
+          driver: pick(driversRef.current.driver),
+          ghosts: driversRef.current.ghosts.filter((g) => available.includes(g)),
+        }
+        setStatus((s) => ({ ...s, available }))
         await api.onSnapshot(
           Comlink.proxy((snap: Float32Array) => {
             renderer.pushSnapshot(snap)
@@ -133,15 +177,7 @@ export function useLiveSim(opts: LiveSimOptions) {
           }),
         )
         if (o.intro && !reduced) await api.pause()
-        const geo = await api.init({
-          config: cfg,
-          trackSeed: seed,
-          nCars: o.nCars,
-          seed: o.seed ?? 1,
-          conditions: o.conditions,
-          layout: o.layout,
-          autoPuddles: o.autoPuddles ?? false,
-        })
+        const geo = await api.init(initArgs(cfg, seed, o.nCars, o.layout))
         if (disposed) return
         renderer.setTrack(geo, o.intro)
         setStatus((s) => ({ ...s, phase: 'ready', track: geo }))
@@ -166,6 +202,7 @@ export function useLiveSim(opts: LiveSimOptions) {
     const api = apiRef.current
     const renderer = rendererRef.current
     if (!api || !renderer) return
+    valuesRef.current = { ...valuesRef.current, ...values }
     if (values.rain !== undefined) renderer.rain = values.rain
     if (values.windMps !== undefined || values.windDirDeg !== undefined) {
       const dir = ((values.windDirDeg ?? 0) * Math.PI) / 180
@@ -196,5 +233,10 @@ export function useLiveSim(opts: LiveSimOptions) {
     await apiRef.current?.setSpeed(multiplier)
   }, [])
 
-  return { canvasRef, status, setConditions, setTrack, control, setSpeed }
+  const setDrivers = useCallback(async (driver: DriverKind, ghosts: DriverKind[]) => {
+    driversRef.current = { driver, ghosts }
+    await apiRef.current?.setDrivers(driver, ghosts)
+  }, [])
+
+  return { canvasRef, status, setConditions, setTrack, control, setSpeed, setDrivers }
 }

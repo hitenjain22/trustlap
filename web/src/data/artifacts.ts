@@ -4,6 +4,13 @@
  */
 import { z } from 'zod'
 import { parseSimConfig, type SimConfig } from '../sim/config.ts'
+import {
+  checkpointsSchema,
+  curriculumSchema,
+  lineageSchema,
+  metricsSchema,
+  populationSchema,
+} from './schemas.ts'
 
 export const ARTIFACT_VERSION = 'v1'
 const base = `/artifacts/${ARTIFACT_VERSION}`
@@ -79,6 +86,30 @@ export const loadSimConfig = (): Promise<SimConfig> => fetchJson('config.json', 
 export const loadShowcase = (): Promise<ShowcaseTrack[]> =>
   fetchJson('tracks/showcase.json', (raw) => showcaseSchema.parse(raw).tracks)
 
+export const manifestSchema = z.object({
+  schema_version: z.literal(1),
+  artifact_version: z.string(),
+  git_sha: z.string(),
+  config_hash: z.string(),
+  files: z.array(z.object({ path: z.string(), bytes: z.number(), sha256: z.string() })),
+})
+export type Manifest = z.infer<typeof manifestSchema>
+export const loadManifest = (): Promise<Manifest> =>
+  fetchJson('manifest.json', (raw) => manifestSchema.parse(raw))
+
+export const calibrationSchema = z.object({
+  u: z.array(z.number()).min(2),
+  p: z.array(z.number().min(0).max(1)).min(2),
+  tau_default: z.number(),
+})
+export type Calibration = z.infer<typeof calibrationSchema>
+/** The crash-risk table if this build has one (M6), else null: absence is not an error. */
+export async function loadCalibration(): Promise<Calibration | null> {
+  const manifest = await loadManifest()
+  if (!manifest.files.some((f) => f.path === 'calibration.json')) return null
+  return fetchJson('calibration.json', (raw) => calibrationSchema.parse(raw))
+}
+
 export const loadBench = (): Promise<Bench> =>
   fetchJson('bench.json', (raw) => benchSchema.parse(raw))
 
@@ -92,3 +123,19 @@ export function bestFitTrack(tracks: ShowcaseTrack[], regionAspect: number): Sho
 export function clearArtifactCache(): void {
   cache.clear()
 }
+
+/** Load an optional artifact: null when this build doesn't have it (not an error). */
+async function optional<T>(path: string, parse: (raw: unknown) => T): Promise<T | null> {
+  const manifest = await loadManifest()
+  if (!manifest.files.some((f) => f.path === path)) return null
+  return fetchJson(path, parse)
+}
+
+export const loadMetrics = () => optional('metrics.json', (raw) => metricsSchema.parse(raw))
+export const loadCurriculum = () =>
+  optional('curriculum.json', (raw) => curriculumSchema.parse(raw))
+export const loadPopulation = () =>
+  optional('population_curves.json', (raw) => populationSchema.parse(raw))
+export const loadLineage = () => optional('lineage.json', (raw) => lineageSchema.parse(raw))
+export const loadCheckpoints = () =>
+  optional('checkpoints/index.json', (raw) => checkpointsSchema.parse(raw))

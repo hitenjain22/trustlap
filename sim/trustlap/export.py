@@ -183,6 +183,306 @@ def export_artifacts(out_dir: Path = ARTIFACTS) -> None:
 
 
 # ---------------------------------------------------------------------------------------------
+# Policy weights (SPEC 9.2)
+# ---------------------------------------------------------------------------------------------
+
+
+def _dense_layers(
+    params: dict[str, Any], prefix: str, out_activation: str
+) -> list[tuple[str, np.ndarray, np.ndarray, str]]:
+    """[(name, kernel [in, out], bias [out], activation)] for `{prefix}_0…`, then `{prefix}_out`."""
+    params = params[prefix]  # Flax nests each MLP's layers under the module name
+    layers = []
+    i = 0
+    while f"{prefix}_{i}" in params:
+        layer = params[f"{prefix}_{i}"]
+        layers.append(
+            (f"{prefix}_{i}", np.asarray(layer["kernel"]), np.asarray(layer["bias"]), "elu")
+        )
+        i += 1
+    out = params[f"{prefix}_out"]
+    layers.append(
+        (f"{prefix}_out", np.asarray(out["kernel"]), np.asarray(out["bias"]), out_activation)
+    )
+    return layers
+
+
+def _stats_json(stats: dict[str, Any]) -> dict[str, list[float]]:
+    var = np.asarray(stats["var"], np.float64)
+    return {
+        "mean": np.asarray(stats["mean"], np.float32).astype(float).tolist(),
+        "std": np.sqrt(var + 1e-8).astype(np.float32).astype(float).tolist(),
+    }
+
+
+def write_network(
+    out_dir: Path,
+    name: str,
+    nets: dict[str, list[tuple[str, np.ndarray, np.ndarray, str]]],
+    extra: dict[str, Any],
+) -> dict[str, Any]:
+    """Write `name.bin` (little-endian float32: per layer kernel [in, out] row-major, then bias)
+    and `name.json` (layer table with byte offsets, plus `extra`). Returns the json."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    chunks: list[bytes] = []
+    offset = 0
+    table: dict[str, list[dict[str, Any]]] = {}
+    for net_name, layers in nets.items():
+        table[net_name] = []
+        for layer_name, kernel, bias, activation in layers:
+            k = np.ascontiguousarray(kernel, dtype="<f4")
+            b = np.ascontiguousarray(bias, dtype="<f4")
+            table[net_name].append(
+                {
+                    "name": layer_name,
+                    "in": int(k.shape[0]),
+                    "out": int(k.shape[1]),
+                    "activation": activation,
+                    "byte_offset": offset,
+                }
+            )
+            chunks += [k.tobytes(), b.tobytes()]
+            offset += k.nbytes + b.nbytes
+    blob = b"".join(chunks)
+    (out_dir / f"{name}.bin").write_bytes(blob)
+    meta = {
+        "schema_version": 1,
+        "name": name,
+        "bin": f"{name}.bin",
+        "bytes": len(blob),
+        "sha256": hashlib.sha256(blob).hexdigest(),
+        "networks": table,
+        "obs_clip": 10.0,
+        **extra,
+    }
+    _write_json(out_dir / f"{name}.json", meta, indent=1)
+    return meta
+
+
+def export_actor_policy(
+    policy_path: Path, name: str, out_dir: Path = ARTIFACTS / "policies"
+) -> dict[str, Any]:
+    """Export a blind or teacher policy saved by `train.save_policy`: actor (+ encoder) and the
+    normalization statistics. The critic stays behind (training only)."""
+    from trustlap.train import load_policy
+
+    pol = load_policy(policy_path)
+    params = pol["params"]["params"]
+    nets = {"actor": _dense_layers(params, "actor", "linear")}
+    extra: dict[str, Any] = {
+        "kind": "teacher" if "encoder" in params else "blind",
+        "obs_norm": _stats_json(pol["obs_stats"]),
+        "log_std": np.asarray(params["log_std"], np.float32).astype(float).tolist(),
+        "training": pol["info"],
+    }
+    if "encoder" in params:
+        nets["encoder"] = _dense_layers(params, "encoder", "tanh")
+        extra["privileged_norm"] = _stats_json(pol["priv_stats"])
+    return write_network(out_dir, name, nets, extra)
+
+
+def export_students(
+    students_path: Path, out_dir: Path = ARTIFACTS / "policies"
+) -> list[dict[str, Any]]:
+    """Export each student's adaptation module as `student_<k>`: a shared trunk (200 → 256 → 128,
+    ELU), the ẑ head (128 → 8, tanh) and the grip head (128 → 2, sigmoid × grip_scale)."""
+    from trustlap.student import load_students
+
+    data = load_students(students_path)
+    params = data["params"]["params"]
+    k_members = int(np.asarray(params["adapt_out"]["kernel"]).shape[0])
+    metas = []
+    for k in range(k_members):
+        take = lambda layer, k=k: (np.asarray(layer["kernel"][k]), np.asarray(layer["bias"][k]))  # noqa: E731
+        trunk = []
+        i = 0
+        while f"adapt_{i}" in params:
+            kern, bias = take(params[f"adapt_{i}"])
+            trunk.append((f"adapt_{i}", kern, bias, "elu"))
+            i += 1
+        z_k, z_b = take(params["adapt_out"])
+        g_k, g_b = take(params["grip_out"])
+        nets = {
+            "trunk": trunk,
+            "z_head": [("adapt_out", z_k, z_b, "tanh")],
+            "grip_head": [("grip_out", g_k, g_b, "sigmoid")],
+        }
+        extra = {
+            "kind": "student",
+            "member": k,
+            "grip_scale": CONFIG.network.grip_scale,
+            "training": data["info"],
+        }
+        metas.append(write_network(out_dir, f"student_{k}", nets, extra))
+    return metas
+
+
+def golden_students(
+    students_path: Path, teacher_path: Path, n: int = 300, seed: int = 12
+) -> dict[str, Any]:
+    """Random (obs, history) → ensemble action, uncertainty, mean ẑ and grip."""
+    from trustlap.confidence import ensemble_act
+    from trustlap.env import Observation
+    from trustlap.student import load_students, load_teacher
+
+    teacher = load_teacher(teacher_path)
+    params = jax.tree.map(jnp.asarray, load_students(students_path)["params"])
+    k1, k2 = jax.random.split(jax.random.key(seed))
+    obs = teacher.obs_stats.mean + 1.5 * jnp.sqrt(teacher.obs_stats.var) * jax.random.normal(
+        k1, (n, CONFIG.obs.policy_size)
+    )
+    history = jax.random.uniform(k2, (n, CONFIG.obs.history_size), minval=-1.0, maxval=1.0)
+    batch = Observation(
+        policy=obs, privileged=jnp.zeros((n, CONFIG.obs.privileged_size)), history=history
+    )
+    out = jax.vmap(lambda o: ensemble_act(teacher, params, o))(batch)
+    return {
+        "n": n,
+        "obs": _f32(obs),
+        "history": _f32(history),
+        "action": _f32(out.action),
+        "uncertainty": _f32(out.uncertainty),
+        "z_mean": _f32(out.z_mean),
+        "grip_mean": _f32(out.grip_mean),
+    }
+
+
+# ---------------------------------------------------------------------------------------------
+# Training records and metrics (SPEC 9.1, 9.3)
+# ---------------------------------------------------------------------------------------------
+
+
+def _read_log(run_dir: Path) -> list[dict[str, Any]]:
+    path = run_dir / "log.jsonl"
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+
+
+def _downsample(rows: list[Any], limit: int = 500) -> list[Any]:
+    if len(rows) <= limit:
+        return rows
+    idx = np.unique(np.round(np.linspace(0, len(rows) - 1, limit)).astype(int))
+    return [rows[i] for i in idx]
+
+
+def export_training(
+    teacher_run: Path | None, blind_run: Path | None, out_dir: Path = ARTIFACTS
+) -> None:
+    """curriculum.json, population_curves.json, lineage.json and the checkpoint timeline."""
+    from trustlap.train import load_policy
+
+    if teacher_run and (teacher_run / "log.jsonl").exists():
+        rows = _read_log(teacher_run)
+        curriculum = [
+            {
+                "update": r["update"],
+                "env_steps": r["env_steps_per_member"],
+                "d": r["difficulty"],
+                "success": r["curriculum_success"],
+            }
+            for r in rows
+        ]
+        _write_json(
+            out_dir / "curriculum.json", {"run": "teacher", "points": _downsample(curriculum)}
+        )
+        points = [
+            {
+                "update": r["update"],
+                "env_steps": r["env_steps_per_member"],
+                "fitness": [round(f, 3) for f in r["fitness"]],
+                "ids": r["member_ids"],
+                "lr": r["lr"],
+                "ent": r["ent_coef"],
+                "completion": r["completion"],
+            }
+            for r in rows
+        ]
+        curves = {"members": len(rows[0]["fitness"]), "points": _downsample(points)}
+        _write_json(out_dir / "population_curves.json", curves)
+        lineage_path = teacher_run / "lineage.json"
+        if lineage_path.exists():
+            lineage = json.loads(lineage_path.read_text())
+            lineage["winner_id"] = load_policy(teacher_run / "final.msgpack")["info"].get(
+                "member_id"
+            )
+            _write_json(out_dir / "lineage.json", lineage)
+        snaps = sorted((teacher_run / "snapshots").glob("update_*.msgpack"))
+        index = []
+        for i, snap in enumerate(snaps):
+            info = export_actor_policy(snap, f"teacher_{i:02d}", out_dir / "checkpoints")[
+                "training"
+            ]
+            index.append(
+                {
+                    "i": i,
+                    "name": f"teacher_{i:02d}",
+                    "update": info["update"],
+                    "env_steps": info["env_steps"],
+                    "difficulty": info["difficulty"],
+                    "mean_return": info["return"],
+                    "completion": info["completion"],
+                }
+            )
+        if index:
+            _write_json(out_dir / "checkpoints" / "index.json", {"checkpoints": index}, indent=1)
+    if blind_run and (blind_run / "log.jsonl").exists():
+        rows = _read_log(blind_run)
+        curve = [
+            {"update": r["update"], "env_steps": r["env_steps_per_member"], "d": r["difficulty"]}
+            for r in rows
+        ]
+        _write_json(
+            out_dir / "curriculum_blind.json", {"run": "blind", "points": _downsample(curve)}
+        )
+
+
+def _training_totals(runs: list[Path]) -> tuple[int, float]:
+    """Total env steps (all members) and wall-clock minutes across training runs."""
+    steps, minutes = 0, 0.0
+    for run in runs:
+        rows = _read_log(run)
+        if not rows:
+            continue
+        last = rows[-1]
+        if "env_steps" in last:  # PPO runs log the population total
+            steps += last["env_steps"]
+        else:  # student runs log per member
+            steps += last["env_steps_per_member"] * len(last["z_loss"])
+        minutes += last["wall_s"] / 60
+    return int(steps), round(minutes, 1)
+
+
+def export_metrics(partial: Path, runs: list[Path], out_dir: Path = ARTIFACTS) -> dict[str, Any]:
+    """Assemble metrics.json from the evaluation output, the benchmark and the training logs."""
+    metrics = json.loads(partial.read_text())
+    head = metrics["headline"]
+    bench_path = RESULTS / "bench_t4.json"
+    if bench_path.exists():
+        bench = json.loads(bench_path.read_text())
+        gpu = [r for r in bench["rows"] if r["impl"].startswith("jax-") and r["impl"] != "jax-cpu"]
+        cpu = {r["n_cars"]: r for r in bench["rows"] if r["impl"] == "jax-cpu"}
+        shared = [r for r in gpu if r["n_cars"] in cpu]
+        if gpu:
+            head["max_parallel_cars"] = max(r["n_cars"] for r in gpu)
+        if shared:
+            top = max(shared, key=lambda r: r["n_cars"])
+            head["gpu_speedup_vs_cpu"] = round(
+                top["steps_per_s"] / cpu[top["n_cars"]]["steps_per_s"], 1
+            )
+    steps, minutes = _training_totals(runs)
+    head["train_env_steps_total"] = steps
+    head["train_wall_minutes"] = minutes
+    head["train_hardware"] = "laptop CPU (Intel, 4 threads), JAX 0.4.38"
+    metrics["git_sha"] = _git_sha()
+    _write_json(out_dir / "metrics.json", metrics)
+    cal = metrics["calibration"]
+    table = {"u": cal["table"]["u"], "p": cal["table"]["p"], "tau_default": cal["tau_default"]}
+    _write_json(out_dir / "calibration.json", table)
+    return metrics
+
+
+# ---------------------------------------------------------------------------------------------
 # Golden parity fixtures
 # ---------------------------------------------------------------------------------------------
 
@@ -402,6 +702,111 @@ def golden_scripted_closed_loop(bank: TrackBank, steps: int = 400) -> dict[str, 
     return {"steps": steps, "checkpoints": [100, 200, steps], "cases": cases}
 
 
+def golden_policy(policy_path: Path, n: int = 500, seed: int = 11) -> dict[str, Any]:
+    """Random raw observations (around the policy's own statistics) → mean action."""
+    from trustlap.networks import ActorCritic
+    from trustlap.ppo import RunningStats, policy_action
+    from trustlap.train import load_policy
+
+    pol = load_policy(policy_path)
+    teacher = "encoder" in pol["params"]["params"]
+    net = ActorCritic(privileged_actor=teacher)
+    obs_stats = RunningStats(**{k: jnp.asarray(v) for k, v in pol["obs_stats"].items()})
+    priv_stats = RunningStats(**{k: jnp.asarray(v) for k, v in pol["priv_stats"].items()})
+    k1, k2 = jax.random.split(jax.random.key(seed))
+    obs = obs_stats.mean + 1.5 * jnp.sqrt(obs_stats.var) * jax.random.normal(
+        k1, (n, CONFIG.obs.policy_size)
+    )
+    priv = priv_stats.mean + 1.5 * jnp.sqrt(priv_stats.var) * jax.random.normal(
+        k2, (n, CONFIG.obs.privileged_size)
+    )
+    from trustlap.env import Observation
+
+    batch = Observation(
+        policy=obs, privileged=priv, history=jnp.zeros((n, CONFIG.obs.history_size))
+    )
+    actions = jax.vmap(lambda o: policy_action(net, pol["params"], obs_stats, priv_stats, o))(batch)
+    return {"n": n, "obs": _f32(obs), "privileged": _f32(priv), "action": _f32(actions)}
+
+
+def golden_policy_closed_loop(
+    policy_path: Path, bank: TrackBank, steps: int = 400
+) -> dict[str, Any]:
+    """The policy drives from the start line on the golden tracks (no noise): 20 cases ×
+    `steps` steps → progress at checkpoints and whether it crashed (SPEC 9.4)."""
+    from trustlap.networks import ActorCritic
+    from trustlap.ppo import RunningStats, policy_action
+    from trustlap.train import load_policy
+
+    pol = load_policy(policy_path)
+    teacher = "encoder" in pol["params"]["params"]
+    net = ActorCritic(privileged_actor=teacher)
+    obs_stats = RunningStats(**{k: jnp.asarray(v) for k, v in pol["obs_stats"].items()})
+    priv_stats = RunningStats(**{k: jnp.asarray(v) for k, v in pol["priv_stats"].items()})
+    b = TrackBank(*(jnp.asarray(a) for a in bank))
+    n_tracks = int(bank.width.shape[0])
+    zero_noise = jnp.zeros(CONFIG.obs.policy_size - 1)
+
+    @jax.jit
+    def run(cond: Conditions, tid: jax.Array) -> tuple[jax.Array, jax.Array]:
+        state = start_state(b, tid, 0.0, CONFIG.episode.eval_speed_mps, cond, 1.0, CONFIG, jnp)
+
+        def body(
+            carry: tuple[EnvState, jax.Array], _: Any
+        ) -> tuple[tuple[EnvState, jax.Array], jax.Array]:
+            st, crashed = carry
+            obs, sensed = observe(st, b, zero_noise, CONFIG, jnp)
+            st = st._replace(last_proprio=sensed)
+            a = policy_action(net, pol["params"], obs_stats, priv_stats, obs)
+            new, _, info = core_step(st, a, jnp.zeros(2), b, CONFIG, jnp)
+            new = jax.tree.map(lambda x, y: jnp.where(crashed, y, x), new, st)
+            return (new, crashed | info.terminated & ~info.lap_completed), new.progress_m
+
+        (final, crashed), progress = jax.lax.scan(
+            body, (state, jnp.array(False)), None, length=steps
+        )
+        return progress, crashed
+
+    cases = []
+    for i in range(20):
+        suite = ("dry", "wet", "puddles", "dry")[i % 4]
+        tid = i % n_tracks
+        cond = suite_conditions(jax.random.key(100 + i), suite, b.length[tid], b.width[tid])
+        progress, crashed = run(cond, jnp.int32(tid))
+        cases.append(
+            {
+                "suite": suite,
+                "track_index": tid,
+                "conditions": _soa(cond),
+                "progress_m": _f32(progress[jnp.array([99, 199, steps - 1])]),
+                "crashed": bool(crashed),
+            }
+        )
+    return {"steps": steps, "checkpoints": [100, 200, steps], "cases": cases}
+
+
+def export_policy_golden(
+    policies: dict[str, Path], closed_loop: str | None, out_dir: Path = GOLDEN
+) -> None:
+    """Parity fixtures for exported networks: `policy_<name>.json` and `closed_loop.json`."""
+    jax.config.update("jax_default_matmul_precision", "highest")
+    meta = {"git_sha": _git_sha(), "physics_hash": physics_hash(), "jax_version": jax.__version__}
+    for name, path in policies.items():
+        _write_json(
+            out_dir / f"policy_{name}.json", {**meta, "policy": name, **golden_policy(path)}
+        )
+    if closed_loop:
+        bank = make_bank([generate_track(s) for s in GOLDEN_TRACK_SEEDS])
+        data = golden_policy_closed_loop(policies[closed_loop], bank)
+        _write_json(
+            out_dir / "closed_loop.json",
+            {**meta, "policy": closed_loop, "track_seeds": list(GOLDEN_TRACK_SEEDS), **data},
+        )
+    for p in sorted(out_dir.glob("policy_*.json")) + [out_dir / "closed_loop.json"]:
+        if p.exists():
+            print(f"golden → {p.relative_to(REPO)} ({p.stat().st_size / 1024:.0f} KB)")
+
+
 def export_golden(out_dir: Path = GOLDEN) -> None:
     """Write every parity fixture."""
     jax.config.update("jax_default_matmul_precision", "highest")
@@ -438,11 +843,53 @@ def main() -> None:
     )
     parser.add_argument("--golden", action="store_true", help="also write parity fixtures")
     parser.add_argument("--only-golden", action="store_true", help="write only parity fixtures")
+    parser.add_argument(
+        "--policy",
+        action="append",
+        default=[],
+        metavar="NAME=PATH",
+        help="export a trained policy (e.g. blind=runs/blind/final.msgpack); repeatable",
+    )
+    parser.add_argument("--closed-loop", default=None, help="policy NAME for closed_loop.json")
+    parser.add_argument("--students", type=Path, default=None, help="students.msgpack to export")
+    parser.add_argument(
+        "--teacher", type=Path, default=None, help="teacher policy for the students"
+    )
+    parser.add_argument("--teacher-run", type=Path, default=None, help="teacher run dir")
+    parser.add_argument("--blind-run", type=Path, default=None, help="blind run dir")
+    parser.add_argument("--metrics", type=Path, default=None, help="evaluate.py output to publish")
     args = parser.parse_args()
+    policies = dict(item.split("=", 1) for item in args.policy)
+    policies = {k: Path(v) for k, v in policies.items()}
+    for name, path in policies.items():
+        meta = export_actor_policy(path, name)
+        print(f"policy → policies/{name}.json ({meta['bytes'] / 1024:.0f} KB weights)")
+    if args.students:
+        metas = export_students(args.students)
+        print(f"students → {len(metas)} × policies/student_<k>.json")
+    if args.teacher_run or args.blind_run:
+        export_training(args.teacher_run, args.blind_run)
+    if args.metrics:
+        student_run = args.students.parent if args.students else None
+        runs = [p for p in (args.blind_run, args.teacher_run, student_run) if p]
+        export_metrics(args.metrics, runs)
+        print("metrics → metrics.json, calibration.json")
     if not args.only_golden:
         export_artifacts()
     if args.golden or args.only_golden:
         export_golden()
+    if policies and (args.golden or args.only_golden):
+        export_policy_golden(policies, args.closed_loop)
+    if args.students and args.teacher and (args.golden or args.only_golden):
+        meta = {
+            "git_sha": _git_sha(),
+            "physics_hash": physics_hash(),
+            "jax_version": jax.__version__,
+        }
+        _write_json(
+            GOLDEN / "students.json", {**meta, **golden_students(args.students, args.teacher)}
+        )
+        print("golden → web/tests/parity/golden/students.json")
 
 
 if __name__ == "__main__":

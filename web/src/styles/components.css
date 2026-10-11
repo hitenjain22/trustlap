@@ -258,3 +258,47 @@ details > summary::after {
 details[open] > summary::after {
   content: '−';
 }
+
+/* Driver identity swatches (SPEC 11.3): color + line pattern, never color alone. */
+.driver-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 0;
+  margin-right: 6px;
+  vertical-align: middle;
+  border-top: 3px solid;
+}
+.driver-swatch--student {
+  border-color: var(--drv-student);
+}
+.driver-swatch--teacher {
+  border-color: var(--drv-teacher);
+  border-top-style: dotted;
+}
+.driver-swatch--blind {
+  border-color: var(--drv-blind);
+  border-top-style: dashed;
+}
+.driver-swatch--scripted {
+  border-color: var(--drv-scripted);
+  border-top-style: dashed;
+}
+.driver-swatch--ghost {
+  opacity: 0.6;
+}
+.chip {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0 12px;
+  font-size: 14px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.chip input {
+  accent-color: var(--sodium);
+  margin-right: 4px;
+}

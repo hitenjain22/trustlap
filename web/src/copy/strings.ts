@@ -40,7 +40,7 @@ export const strings = {
       },
       {
         title: 'A population that teaches itself',
-        body: 'Next: a population of drivers trains side by side. The weakest copy the strongest and tweak how they learn.',
+        body: 'A population of drivers trains side by side. Every few minutes the weakest copy the strongest and tweak how they learn.',
       },
       {
         title: 'A world that gets harder as they improve',
@@ -48,11 +48,15 @@ export const strings = {
       },
       {
         title: 'A driver that feels the road',
-        body: 'Next: a second network reads the last second of motion and estimates the grip under each axle, without being told the road is wet.',
+        body: 'A second network reads the last second of motion and estimates the grip under each axle. No one tells it the road is wet.',
+        measured: (ms: number) =>
+          `On a straight it notices a puddle under the rear wheels in about ${ms} ms.`,
       },
       {
         title: 'A driver that knows when it’s unsure',
-        body: 'Next: five copies of the sensing network vote. When they disagree, the car slows down before it crashes.',
+        body: 'Five copies of the sensing network vote. When they disagree, the car knows it is somewhere unfamiliar.',
+        measured: (ece: string) =>
+          `Its crash-risk estimate is calibrated (error ${ece}), though only weakly predictive at this training budget.`,
       },
     ],
     benchSource: (date: string, sha: string) =>
@@ -78,6 +82,213 @@ export const strings = {
     groups: { weather: 'Weather', car: 'Car', electronics: 'Electronics' },
     canvasLabel: 'A self-taught car driving on the selected track, with a scripted ghost car.',
   },
+  how: {
+    title: 'How it works',
+    intro:
+      'Six pieces, built in order. Each one combines a published technique with a custom simulator; nothing here is a new algorithm. What’s new is putting them together and measuring them honestly.',
+    pipeline: [
+      'Simulator',
+      'Curriculum',
+      'Population (PPO)',
+      'Teacher',
+      'Student ensemble',
+      'Browser',
+    ],
+    pipelineLabel:
+      'Pipeline: simulator, then curriculum, then a population trained with PPO, then the teacher, then the student ensemble, then the browser.',
+    labels: {
+      what: 'What it is',
+      why: 'Why it’s here',
+      measured: 'What I measured',
+      borrowed: 'Borrowed from',
+    },
+    components: [
+      {
+        id: 'sim',
+        title: 'The simulator',
+        what: 'A dynamic bicycle model: front and rear tires with Pacejka slip curves and a friction ellipse, drag, rolling resistance, wind and gusts, steering lag and input delay, puddles that change the grip under each axle. Written in JAX so one function steps tens of thousands of cars at once.',
+        why: 'Learning needs billions of driving decisions. A GPU can only provide them if the whole world is array math, and the browser can only show the same car if the physics is simple enough to port exactly.',
+        measured:
+          'Throughput on a T4 GPU vs its CPU and a plain Python loop (Results, benchmark). The TypeScript port matches Python to within 1.4% of a 0.0001 tolerance on 2,000 random cases.',
+        borrowed:
+          'Pacejka’s “Magic Formula” tire model; the vectorized-environment pattern from PureJaxRL (Lu et al., 2022).',
+      },
+      {
+        id: 'curriculum',
+        title: 'The automatic curriculum',
+        what: 'One difficulty dial from 0 to 1 widens every condition range: rain, grip, wind, tire wear, mass, power, brakes, lag, delay and sensor noise. It rises when drivers finish over 80% of laps twice in a row and backs off below 50%.',
+        why: 'Starting in a storm, nothing learns. Starting dry and stopping there, nothing generalizes. The dial keeps the task hard but learnable.',
+        measured:
+          'The difficulty reached in training (Training lab). With the overnight CPU budget it reached about half of the full ranges, and that limit shows up clearly in the results.',
+        borrowed:
+          'Inspired by Automatic Domain Randomization (OpenAI et al., 2019); this is a single global dial, not the full per-parameter version.',
+      },
+      {
+        id: 'ppo',
+        title: 'Population-based PPO',
+        what: 'Proximal Policy Optimization: the driver improves a little at a time, never changing too much in one update. Several drivers train side by side; every 25 updates the weakest copy the strongest and nudge their learning rate and exploration.',
+        why: 'PPO is stable on continuous control. The population tunes its own learning settings instead of me guessing them.',
+        measured:
+          'Fitness curves, the family tree of copies and the hyperparameters the winners chose (Training lab).',
+        borrowed:
+          'PPO (Schulman et al., 2017); the single-jitted-loop training recipe from PureJaxRL (Lu et al., 2022); Population Based Training (Jaderberg et al., 2017).',
+      },
+      {
+        id: 'teacher',
+        title: 'The teacher',
+        what: 'A driver that is told the true conditions (grip under each axle, puddles ahead, mass, wind…) through a small encoder network that compresses them into 8 numbers.',
+        why: 'It shows how well a driver can do when it knows everything, and its 8-number summary is what the student learns to estimate.',
+        measured:
+          'Completion in every condition (Results). At this compute the teacher didn’t beat the blind driver everywhere, partly because each teacher got half the blind driver’s training steps.',
+        borrowed: 'Phase 1 of Rapid Motor Adaptation (Kumar, Fu, Pathak, Malik, 2021).',
+      },
+      {
+        id: 'student',
+        title: 'The student: feeling the road',
+        what: 'A second network reads the last second of motion (20 steps of speed, slip, steering and pedal inputs) and estimates the teacher’s 8-number summary plus the grip under each axle. The teacher’s driving network then acts on that estimate.',
+        why: 'A real car isn’t told the road is wet. It has to feel it from how the car responds.',
+        measured:
+          'Grip estimate error; whether it notices a single puddle (in controlled tests it didn’t, on a straight or mid-corner); and completion vs the blind driver: better on puddles, wet roads and worn tires, worse in several other conditions. Why it does better in the wet isn’t isolated yet (Results).',
+        borrowed:
+          'Phase 2 of Rapid Motor Adaptation (Kumar et al., 2021), trained DAgger-style (Ross et al., 2011).',
+      },
+      {
+        id: 'confidence',
+        title: 'Knowing when it’s unsure',
+        what: 'Five students trained with different seeds. When their estimates disagree, the car is probably somewhere it doesn’t understand. That disagreement is turned into a crash probability with isotonic regression; a safety governor eases off above a threshold.',
+        why: 'A driver that can say “I’m not sure” is more useful than one that is confidently wrong.',
+        measured:
+          'Calibration (reliability diagram, ECE, Brier, AUROC) and the governor’s crash-vs-speed trade-off (Results). The estimate is calibrated but only weakly predictive, and the governor didn’t reduce crashes at this compute.',
+        borrowed:
+          'Deep-ensemble uncertainty (Lakshminarayanan et al., 2017); isotonic calibration (Zadrozny & Elkan, 2002).',
+      },
+      {
+        id: 'browser',
+        title: 'Running in your browser',
+        what: 'An exact TypeScript port of the simulator and a dependency-free neural-network runtime, inside a Web Worker. The page draws at your screen’s refresh rate and blends between 20 Hz physics steps.',
+        why: 'So you can poke at it yourself: turn up the rain, change the conditions, and watch the real trained networks cope.',
+        measured:
+          'Parity tests on every network and on full closed-loop laps; 60 fps with 48 cars; Lighthouse 100 for performance and accessibility.',
+        borrowed:
+          'Comlink for worker messaging; everything else is plain TypeScript and Canvas 2D.',
+      },
+    ],
+    card: {
+      title: 'Model card',
+      rows: [
+        [
+          'Inputs',
+          'Driving: 33 numbers in the car’s frame (speed, slip, steering, last action, distance from the center line, heading error, 12 points of the road ahead, track width). Student: plus the last 1 s of motion (200 numbers). Teacher: plus 14 true conditions.',
+        ],
+        [
+          'Outputs',
+          'Steering and throttle/brake in [−1, 1], 20 times a second. The student also outputs grip estimates; the ensemble outputs a crash-risk estimate.',
+        ],
+        [
+          'Training data',
+          'Simulated only: 2,000 procedurally generated tracks with randomized weather, grip, car and sensor conditions. No real-world data.',
+        ],
+        [
+          'Evaluation',
+          '200 held-out tracks never used for training or tuning, 12 condition suites (4 never trained on), paired across drivers, 95% bootstrap intervals.',
+        ],
+        [
+          'Compute',
+          'Overnight on a laptop CPU: blind 40M steps, teacher population 4 × 20M, students 5 × 8M (well below the GPU budgets in the design).',
+        ],
+        [
+          'Intended use',
+          'A demonstration and teaching tool for adaptive control and reinforcement learning.',
+        ],
+        ['Not for', 'Anything involving real vehicles.'],
+        [
+          'Known limits',
+          'Flat 2D world, one car type, four-wheel effects collapsed into two axles, reduced training compute; the students share one teacher policy, so their disagreement reflects uncertainty about the road, not about the driving.',
+        ],
+      ] as [string, string][],
+      resultsLead: 'Every number on this site comes from the evaluation script.',
+      resultsLink: 'See all results.',
+    },
+    repro: {
+      title: 'Reproduce it',
+      body: 'Python 3.12 with JAX for simulation and training; Node 22+ for the site. Full instructions are in docs/RUNBOOK.md.',
+      commands: `# simulator, training, evaluation (sim/)
+pip install -e "sim[dev]"
+python -m trustlap.track --out runs/banks
+python -m trustlap.train --agent blind --env-steps 40e6 --out runs/blind
+python -m trustlap.train --agent teacher --population 4 --env-steps 20e6 --out runs/teacher
+python -m trustlap.student --teacher runs/teacher/final.msgpack --out runs/students --env-steps 8e6
+python -m trustlap.evaluate --blind runs/blind/final.msgpack --teacher runs/teacher/final.msgpack \
+    --students runs/students/students.msgpack --seeds 2 --out runs/eval
+
+# website (web/)
+npm ci && npm run dev`,
+      repo: 'Source code and full history on GitHub',
+    },
+  },
+  lab: {
+    title: 'Training lab',
+    intro:
+      'How the teacher driver learned: a population trained side by side on the laptop CPU, copying each other’s best ideas while the simulator made the world harder.',
+    source:
+      'From population_curves.json, lineage.json, curriculum.json and checkpoints/ · recorded during training',
+    watch: {
+      title: 'Watch it learn',
+      body: 'These 16 cars run the actual network saved at that point in training, live in your browser, in that moment’s conditions. Drag the slider or press play.',
+      stepsLabel: 'training steps per driver',
+      caption: (pct: number, d: number) =>
+        `At this point it finished ${pct}% of its training laps, with the difficulty dial at ${Math.round(d * 100)}%.`,
+      play: 'Play the timeline',
+      pause: 'Pause the timeline',
+      scrubber: 'Training checkpoint',
+      canvasLabel: (steps: string) =>
+        `Sixteen cars driving with the checkpoint saved after ${steps} training steps.`,
+    },
+    population: {
+      title: (n: number) =>
+        `${n} drivers trained side by side; the amber line is the family that won`,
+      subtitle:
+        'Fitness (meters of progress per second) of each population slot over training. Hover a line to pick it out.',
+      summary: 'Fitness curves for every population member, with the winning lineage highlighted.',
+      winner: 'Winning lineage',
+      x: 'Training steps per driver',
+      y: 'Progress (m/s)',
+    },
+    tree: {
+      title: (n: number) => `The family tree: ${n} times a weaker driver copied a stronger one`,
+      subtitle:
+        'One lane per population slot. A curve is a copy: the weaker driver takes the stronger one’s network and nudges its learning settings. Amber is the winner’s ancestry.',
+      summary:
+        'Family tree of population-based training: lanes per slot, connectors for copy events.',
+      slot: (n: number) => `Slot ${n}`,
+      member: (id: number) => `Driver #${id}`,
+      event: (
+        p: number,
+        c: number,
+        steps: string,
+        lr0: number,
+        lr1: number,
+        e0: number,
+        e1: number,
+      ) =>
+        `#${p} copied into #${c} at ${steps} steps. Learning rate ${lr0.toExponential(1)} → ${lr1.toExponential(1)}, entropy ${e0.toExponential(1)} → ${e1.toExponential(1)}`,
+    },
+    curriculum: {
+      title: (maxD: number) =>
+        `The world got harder on its own, up to ${Math.round(maxD * 100)}% of full difficulty`,
+      subtitle:
+        'The difficulty dial over training: it rises when the drivers finish over 80% of laps twice in a row, and backs off below 50%.',
+      summary: 'Step chart of curriculum difficulty against training steps.',
+      y: 'Difficulty',
+    },
+    tuning: {
+      title: 'How the winners tuned themselves',
+      subtitle:
+        'Learning rate and exploration (entropy) of the winning lineage over training. Two small charts, not one with two axes.',
+      lr: 'Base learning rate',
+      ent: 'Entropy coefficient',
+    },
+  },
   results: {
     title: 'Results',
     intro: (tracks: number, seeds: number) =>
@@ -91,14 +302,20 @@ export const strings = {
       `From bench.json · measured ${date} · commit ${sha}`,
     tiles: {
       crashReduction: 'Fewer crashes than the blind driver',
+      crashIncrease: 'More crashes than the blind driver',
       crashReductionNote: 'Student vs blind, everything-at-once conditions',
       teacherGap: 'Teacher gap left',
+      teacherGapUndefined:
+        'Not meaningful here: the teacher didn’t beat the blind driver in these conditions, so there was no gap to close.',
       teacherGapNote:
         'Share of the teacher’s advantage over the blind driver the student did not recover (0% = matches the teacher)',
       gripMae: 'Grip estimate error',
       gripMaeNote: 'Mean absolute error of the student’s grip estimate, training-range conditions',
       latency: 'Time to notice a puddle',
       latencyNote: (lo: number, hi: number) => `Median; middle half ${lo}–${hi} ms`,
+      notNoticed: 'Not noticed',
+      notNoticedNote: (n: number, of: number) =>
+        `Noticed a single puddle on a straight in ${n} of ${of} trials.`,
       cars: 'Cars simulated at once',
       carsNote: (speedup: string) => `On one GPU, ${speedup}× faster than the same code on a CPU`,
       compute: 'Training compute',
@@ -140,6 +357,8 @@ export const strings = {
       puddle: {
         title: (ms: number) =>
           `The student notices a puddle under the rear wheels in about ${ms} ms`,
+        titleNotNoticed: (n: number, of: number) =>
+          `The student doesn’t notice a single puddle on a straight (${n} of ${of} trials noticed): it passes in under a second and barely changes the motion the student reads`,
         titleMissing: 'Feeling a puddle',
         subtitle:
           'True rear grip (blue) vs the student’s estimate (amber) as the car crosses a single puddle on a straight. Time 0 is when the true grip first drops by more than 0.1.',

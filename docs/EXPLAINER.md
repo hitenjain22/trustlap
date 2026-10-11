@@ -137,3 +137,78 @@ The Python loop is only measured up to 1,024 cars (the spec forbids extrapolatin
 **A performance lesson.** The hero text panel had a slight blur of the canvas behind it. The browser has to re-blur that area every single frame because the canvas keeps changing, which cut the frame rate from 60 to 36 on a high-resolution screen. Removing one CSS property fixed it. Measure before guessing: the rain particles, which looked like the obvious suspect, weren't the problem.
 
 **Results.** 60 fps with 48 cars, even on a retina-resolution canvas at full rain, with no main-thread task over 50 ms. Lighthouse (desktop): 100 performance, 100 accessibility, 100 best practices, 100 SEO.
+
+---
+
+## Learning to drive: PPO (M3, `ppo.py`, `networks.py`)
+
+**What it is.** The driver is a small neural network (3 layers of 128) that takes the 33 observations and outputs steering and throttle/brake. PPO (Proximal Policy Optimization) improves it by trial and error: drive 1,024 cars for 64 steps, score how each decision turned out compared with what was expected, then nudge the network toward the better-than-expected decisions, but never far in one update (the "clip").
+
+**The pieces, one line each.**
+- **Actor and critic.** The actor picks actions. The critic predicts "how much reward is still coming from here", so the actor can tell good luck from good decisions.
+- **Asymmetric critic.** The critic also sees the true conditions (grip, wind…). It only exists during training, so the deployed driver doesn't need them, but its predictions are better, which makes learning faster.
+- **GAE (λ = 0.95).** A way to blend "what happened next step" with "what happened over the next many steps" when scoring a decision. λ near 1 trusts long-run outcomes; lower values trust the critic's guess more. 0.95 is the standard trade-off.
+- **Terminated vs. truncated.** A crash ends the future (no more reward), so the score adds nothing after it. Hitting the 120 s time limit does *not* mean the future was worthless, so the score adds the critic's estimate of the state the car was in. Getting this wrong teaches the car that time limits are as bad as crashes.
+- **Normalization.** Observations are rescaled using running averages, and rewards by the running spread of returns. These statistics are frozen and shipped with the weights, which is why the browser car drives like the Python one.
+- **Why it's fast.** The whole loop (driving, scoring, updating) is one compiled JAX function, so it never returns to Python between steps (the PureJaxRL recipe).
+
+**What happened tonight.** On the laptop CPU (~17k steps/s), the first 4M steps already took the car from crashing every episode to finishing ~90% of laps on dry roads.
+
+## The automatic curriculum (M3, `curriculum.py`)
+
+A single dial from 0 (perfect dry day) to 1 (all conditions at their worst training values). Every 10 updates: if more than 80% of episodes ended without a crash, twice in a row, the dial goes up 0.05; below 50% it goes down. 20% of cars always drive at difficulty 0 so easy skills aren't forgotten, and 10% get one condition pushed to the edge.
+
+**The honest result.** With the overnight budget the dial reached 0.55 (blind) and 0.45 (teacher). So the drivers never trained on heavy rain, 2-step input delay or strong sensor noise, and they fail sharply there: the blind driver finishes 95% of laps at sensor noise 0.02 but 30% at 0.05 and 0% at 0.15. "Learned policies fall off a cliff outside their training range" is a real, measured finding, and the main reason to rerun at GPU scale.
+
+## Population-based training (M4, `pbt.py`)
+
+Four teacher drivers trained side by side (16 in the full design). Every 25 updates they're ranked by progress per second. The worst one copies the best one's network, optimizer and normalization, then multiplies its learning rate and exploration bonus by 0.8 or 1.25 (or redraws them 25% of the time). Each copy gets a new id, so the history is a family tree (Training lab). It tunes hyperparameters during training instead of running dozens of separate experiments.
+
+## The teacher and the student (M4–M5, `student.py`)
+
+**Teacher.** Like the blind driver, but it's *told* the true conditions through a small encoder that squeezes 14 facts into 8 numbers ("z").
+
+**Student (Rapid Motor Adaptation).** A second network reads the last second of motion (20 steps of speed, sideways slip, rotation, steering and pedals) and learns to output the same 8 numbers ("ẑ"), plus a direct estimate of the grip under each axle. The teacher's driving network then drives on ẑ instead of z. Training is DAgger-style: the car drives on the *student's* estimates, so the student learns in the situations it actually causes, not just the ones the teacher would reach.
+
+**The honest result.** The grip estimate is good (error ≈ 0.05–0.12 μ). But on a straight at steady speed it does *not* notice a puddle (0 of 200 trials): the tires use almost no grip there, so the motion looks the same as on dry road. (An earlier version of my metric reported "350 ms"; it was measuring when the car left the puddle. Fixed.) And it beats the blind driver exactly where grip changes: puddles (14.5% vs 0.7% of laps), wet (28% vs 5%), worn tires (84% vs 75%). But its estimate of the full 8-number summary stayed rough (loss ≈ 0.31). Things like mass, drag and wind are hard to feel in one second. Partly as a result, it does worse than the blind driver in dry, windy and heavy-car conditions. Also, each teacher trained on half as many steps as the blind driver, which confounds the comparison. Both are fixable with more compute.
+
+## Knowing when it's unsure (M5–M6, `confidence.py`)
+
+Five students trained from different random seeds. If their ẑ estimates (and the actions those would lead to) disagree, the car is probably in an unfamiliar situation. That disagreement score is turned into "probability of crashing in the next 2 s" with isotonic regression: a monotone staircase fit to real crash outcomes on the validation tracks. The safety governor eases off the throttle above a risk threshold.
+
+**The honest result.** The probability is *calibrated*: expected calibration error 0.026, so "20% risk" really means about 20%. But it's only weakly *predictive* (AUROC 0.64, where 0.5 is a coin flip). Crashes mostly happen in conditions where all five students are confidently wrong together. The governor made no measurable difference at any threshold. An interviewer will like that you know the difference between calibration and discrimination.
+
+## The evaluation (M6, `evaluate.py`)
+
+- 200 test tracks the drivers never saw, 12 condition suites (4 never trained on), 2 condition draws per track = 400 laps per driver per suite.
+- **Paired.** Every driver drives the identical track and condition pairs, so differences come from the drivers, not luck.
+- **Cluster bootstrap.** To get a 95% interval, resample *tracks* (not laps) 2,000 times and recompute. Laps on the same track aren't independent, so resampling laps would make the intervals look falsely narrow.
+- **Paired lap time.** Lap times are compared only on laps every driver finished; otherwise a cautious driver that crashes on hard tracks looks fast.
+- **Hygiene.** The governor threshold and the calibration were chosen on the validation tracks. The test tracks were used once, for the final numbers.
+- **A bug I caught.** The first evaluation showed 2.5% completion on training tracks vs 30% on test tracks, which made no sense. My cache of compiled rollout functions reused one compiled for the test tracks when running the training tracks. The fix: pass the track data as an argument instead of capturing it. Now there's a regression test for it.
+
+---
+
+## 21 likely interview questions
+
+1. **Why PPO and not DQN?** Steering and throttle are continuous; DQN needs discrete actions. PPO is stable, simple, and works well with thousands of parallel environments.
+2. **What is GAE and why λ = 0.95?** A weighted blend of short- and long-horizon advantage estimates. λ trades bias (trusting the critic) against variance (trusting noisy long returns); 0.95 is the well-tested default for continuous control.
+3. **Terminated vs truncated, and why it matters?** Terminated (crash) means no future reward, so no bootstrap. Truncated (time limit) means the future still had value, so bootstrap from V(final state). Mixing them up teaches the agent that time limits are crashes.
+4. **Why JAX? What do vmap, jit and scan do here?** vmap turns one-car code into many-car code; jit compiles the whole step into one GPU program; scan runs the rollout loop on the device. Result: 26M car-steps/s on a T4, 926× the same code on its CPU.
+5. **How did you make the browser and Python physics match?** Same algorithms in the same operation order, 32-bit rounding after every substep, and "golden" test files computed in Python that the TypeScript must reproduce (worst case at 1.4% of a 1e-4 tolerance). A planted 1% physics change makes the tests fail.
+6. **Can the student feel a puddle?** Not reliably. In controlled tests it noticed a single puddle in 0 of 200 runs on a straight and 0 of 100 mid-corner: the puddle passes in under a second and barely changes the motion the student reads. It still finishes more wet and puddle laps than the blind driver; I haven't isolated why. A plausible but untested explanation is caution inherited from the teacher it imitates, which also does better there. That's the next experiment.
+7. **How does the student learn without being told the conditions?** It learns to infer the teacher's 8-number summary of the conditions from one second of motion, supervised by the teacher, while driving on its own estimates (DAgger).
+8. **Why train a teacher first instead of the student directly?** Learning to drive and learning to sense at the same time is hard. With privileged information the teacher learns quickly; the student's job becomes plain supervised learning.
+9. **What's the asymmetric critic?** The critic sees privileged conditions during training. Better value estimates, same deployable actor.
+10. **How do you know the risk estimate is calibrated?** Reliability diagram on unseen test tracks: in each of 10 bins the predicted crash rate matches the observed one (ECE 0.026). Calibrated isn't the same as discriminative, though: AUROC is only 0.64.
+11. **Why didn't the safety governor help?** Most crashes happen where all five students agree and are all wrong (out-of-distribution conditions), so disagreement doesn't flag them. Ensembles that share one teacher capture uncertainty about the road, not about the driving.
+12. **Why a cluster bootstrap over tracks?** Laps on the same track are correlated; resampling laps would understate uncertainty.
+13. **What's PBT doing that a grid search wouldn't?** It adapts hyperparameters during one training run, and the schedule itself can change over time (exploit/explore every 25 updates).
+14. **What's the curriculum inspired by, and how is yours different?** Automatic Domain Randomization; mine is one global dial, not per-parameter ranges.
+15. **Why does performance collapse outside the training range?** The network never saw those inputs; small out-of-range shifts (noise 0.02 → 0.05) cut completion from 95% to 30%. More curriculum (more compute) is the fix, plus domain randomization wider than the test range.
+16. **Why does the student lose to the blind driver in some conditions?** Its estimate of the conditions is imperfect, and the teacher it imitates had half the blind driver's training. Fair comparisons need matched compute, and that's the first thing I'd fix.
+17. **How did you avoid fooling yourself in evaluation?** Paired comparisons, held-out tracks, validation-only tuning, survivor-bias-free lap times, CIs, and reporting every suite, including the losses.
+18. **What was the hardest bug?** The scripted driver crashed on every lap: power oversteer, then pure-pursuit oscillation, then late braking, then pedal chatter. Each was found from a per-step trace, not guessed. Also the evaluation cache bug that silently simulated the wrong tracks.
+19. **How does the browser run 48 neural networks at 60 fps?** A Web Worker runs physics at a fixed 20 Hz and batches every car through a hand-written MLP (no libraries). The main thread only draws, blending between physics snapshots.
+20. **What would you do with 10× more compute?** Run the full design (PBT 16 × 100M, students 5 × 40M) so the curriculum reaches full difficulty; train blind and teacher with matched budgets; then test whether adaptation's advantage holds across all suites.
+21. **What breaks in the real world?** Real tires, suspension, load transfer, sensor latency and failures, 3D roads, other cars. This is a simulated study of adaptive control, not a self-driving system.

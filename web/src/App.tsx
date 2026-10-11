@@ -21,8 +21,14 @@ export default function App() {
             <NavLink to="/playground" className="navlink">
               {strings.nav.playground}
             </NavLink>
+            <NavLink to="/lab" className="navlink">
+              {strings.nav.lab}
+            </NavLink>
             <NavLink to="/results" className="navlink">
               {strings.nav.results}
+            </NavLink>
+            <NavLink to="/how-it-works" className="navlink">
+              {strings.nav.how}
             </NavLink>
           </div>
           <a

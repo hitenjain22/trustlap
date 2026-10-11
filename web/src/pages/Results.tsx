@@ -248,6 +248,10 @@ export default function Results() {
     : []
 
   const red = h.student_crash_reduction_vs_blind_combined
+  // The teacher gap (t − s) / (t − b) only means something when the teacher beats the blind driver.
+  const tComb = m.suites?.combined?.teacher?.completion?.value
+  const bComb = m.suites?.combined?.blind?.completion?.value
+  const teacherBeatsBlind = tComb != null && bComb != null && tComb > bComb
   const gap = h.teacher_gap_combined
   return (
     <div className="mx-auto max-w-[1280px] px-4 py-12 md:px-6 md:py-16">
@@ -262,21 +266,25 @@ export default function Results() {
 
       <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <StatTile
-          label={S.tiles.crashReduction}
-          value={finite(red) ? `${pct(red.value)}` : null}
+          label={finite(red) && red.value < 0 ? S.tiles.crashIncrease : S.tiles.crashReduction}
+          value={finite(red) ? pct(Math.abs(red.value)) : null}
           note={
             finite(red)
-              ? `${S.tiles.crashReductionNote}. 95% CI ${pct(red.ci[0])} to ${pct(red.ci[1])}.`
+              ? red.value < 0
+                ? `${S.tiles.crashReductionNote}. 95% CI ${pct(-red.ci[1])} to ${pct(-red.ci[0])} more.`
+                : `${S.tiles.crashReductionNote}. 95% CI ${pct(red.ci[0])} to ${pct(red.ci[1])}.`
               : ''
           }
         />
         <StatTile
           label={S.tiles.teacherGap}
-          value={finite(gap) ? pct(gap.value) : null}
+          value={finite(gap) && teacherBeatsBlind ? pct(gap.value) : finite(gap) ? 'n/a' : null}
           note={
-            finite(gap)
-              ? `${S.tiles.teacherGapNote}. 95% CI ${pct(gap.ci[0])} to ${pct(gap.ci[1])}.`
-              : ''
+            finite(gap) && !teacherBeatsBlind
+              ? S.tiles.teacherGapUndefined
+              : finite(gap)
+                ? `${S.tiles.teacherGapNote}. 95% CI ${pct(gap.ci[0])} to ${pct(gap.ci[1])}.`
+                : ''
           }
         />
         <StatTile
@@ -286,9 +294,19 @@ export default function Results() {
         />
         <StatTile
           label={S.tiles.latency}
-          value={lat?.median != null ? `${Math.round(lat.median)} ms` : null}
+          value={
+            lat?.median != null
+              ? `${Math.round(lat.median)} ms`
+              : lat?.noticed === 0 && lat.trials
+                ? S.tiles.notNoticed
+                : null
+          }
           note={
-            lat?.iqr ? S.tiles.latencyNote(Math.round(lat.iqr[0]!), Math.round(lat.iqr[1]!)) : ''
+            lat?.iqr
+              ? S.tiles.latencyNote(Math.round(lat.iqr[0]!), Math.round(lat.iqr[1]!))
+              : lat?.noticed === 0 && lat.trials
+                ? S.tiles.notNoticedNote(0, lat.trials)
+                : ''
           }
         />
         <StatTile
@@ -430,7 +448,9 @@ export default function Results() {
           title={
             lat?.median != null
               ? S.figures.puddle.title(Math.round(lat.median))
-              : S.figures.puddle.titleMissing
+              : lat?.noticed === 0 && lat.trials
+                ? S.figures.puddle.titleNotNoticed(0, lat.trials)
+                : S.figures.puddle.titleMissing
           }
           subtitle={S.figures.puddle.subtitle}
           summary="Line chart: true rear grip drops as the car enters a puddle; the student's estimate follows it with a short lag."

@@ -85,6 +85,8 @@ export interface SimInit {
   ensembleMembers?: number
   /** Isotonic table u → P(crash in 2 s), if computed (calibration.json). */
   calibration?: { u: number[]; p: number[] }
+  /** Training Lab: use this checkpoint (checkpoints/<name>) as the teacher network. */
+  checkpoint?: string
 }
 
 /** Track geometry the renderer needs (float32, interleaved xy). */
@@ -105,6 +107,8 @@ export interface SimApi {
   setTrack(trackSeed: number): Promise<TrackGeometry>
   setConditions(values: Partial<ConditionValues>): Promise<number> // returns active puddles
   setDrivers(driver: DriverKind, ghosts: DriverKind[]): Promise<void>
+  /** Training Lab: drive the "teacher" cars with a timeline checkpoint (checkpoints/<name>). */
+  setCheckpoint(name: string): Promise<void>
   reset(): Promise<void>
   setSpeed(multiplier: number): Promise<void>
   pause(): Promise<void>

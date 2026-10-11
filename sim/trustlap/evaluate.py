@@ -36,7 +36,7 @@ from trustlap.networks import ActorCritic
 from trustlap.ppo import RunningStats, policy_action
 from trustlap.scripted import scripted_action
 from trustlap.student import load_students, load_teacher
-from trustlap.track import TrackBank, build_track, frames, load_bank, make_bank
+from trustlap.track import Track, TrackBank, frames, load_bank, make_bank
 from trustlap.train import load_policy
 
 # act(state, obs, bank, calib_u, calib_p, tau) -> (action [2], uncertainty [], grip_hat [2]).
@@ -154,7 +154,12 @@ def run(
 
         @jax.jit
         def chunk(
-            carry: tuple, keys: jax.Array, cu: jax.Array, cp: jax.Array, tau_j: jax.Array
+            carry: tuple,
+            keys: jax.Array,
+            cu: jax.Array,
+            cp: jax.Array,
+            tau_j: jax.Array,
+            bank: TrackBank,  # an argument, never a closure: one cache entry serves every bank
         ) -> tuple:
             def one(st: EnvState, ob: Observation, done: jax.Array, k: jax.Array) -> Any:
                 k_gust, k_obs = jax.random.split(k)
@@ -210,7 +215,7 @@ def run(
     key = jax.random.fold_in(key, 1)
     while steps < CONFIG.episode.max_steps:
         key, k = jax.random.split(key)
-        carry, u = chunk(carry, jax.random.split(k, _CHUNK), cu, cp, tau_j)
+        carry, u = chunk(carry, jax.random.split(k, _CHUNK), cu, cp, tau_j, bank)
         if record_u:
             us.append(np.asarray(u))
         steps += _CHUNK
@@ -320,21 +325,27 @@ def stadium_bank(
     tangent, normal, curvature = frames(
         centerline, length / len(centerline), CONFIG.track.curvature_smooth_window
     )
-    track = dataclasses.replace(
-        build_track(np.zeros((4, 2)) + [[0, 0], [1, 0], [1, 1], [0, 1]], width_m, 0, 0),
+    track = Track(
+        seed=0,
+        attempt=0,
+        smooth_iters=0,
+        control_points=np.zeros((0, 2)),
         centerline=centerline,
         tangent=tangent,
         normal=normal,
         curvature=curvature,
+        width_m=width_m,
         length_m=length,
-        control_points=np.zeros((0, 2)),
     )
     return make_bank([track])
 
 
-def puddle_step(act: ActFn, trials: int = 200, seed: int = 0) -> dict[str, Any]:
+def puddle_step(
+    act: ActFn, trials: int = 200, seed: int = 0, puddle_s_m: float = 200.0, steps: int = 260
+) -> dict[str, Any]:
     """Single puddle (m = 0.4) 200 m down a straight; car at 20 ± 2 m/s. Latency = time from the
-    rear grip first dropping by more than 0.1 (the tolerance) until |μ̂_rear − μ_rear| < 0.1."""
+    true rear grip first dropping by more than 0.1 until the estimate has fallen by at least half
+    of the true drop; trials where it never does count as "not noticed"."""
     bank = stadium_bank()
     env = Env(bank)
     rng = np.random.default_rng(seed)
@@ -343,7 +354,7 @@ def puddle_step(act: ActFn, trials: int = 200, seed: int = 0) -> dict[str, Any]:
     lateral = rng.uniform(-1.5, 1.5, trials).astype(np.float32)
     conds = jax.vmap(
         lambda lat: c._replace(
-            puddle_s_m=jnp.zeros(p).at[0].set(200.0),
+            puddle_s_m=jnp.zeros(p).at[0].set(puddle_s_m),
             puddle_lateral_m=jnp.zeros(p).at[0].set(lat),
             puddle_mult=jnp.ones(p).at[0].set(0.4),
             puddle_radius_m=jnp.full(p, 8.0),
@@ -374,7 +385,7 @@ def puddle_step(act: ActFn, trials: int = 200, seed: int = 0) -> dict[str, Any]:
             st, ob, mu, mu_hat = jax.vmap(one)(st, ob)
             return (st, ob), (mu, mu_hat)
 
-        _, (mu, mu_hat) = jax.lax.scan(body, (state, obs), None, length=260)
+        _, (mu, mu_hat) = jax.lax.scan(body, (state, obs), None, length=steps)
         return mu, mu_hat
 
     bank_j = env.bank
@@ -387,13 +398,16 @@ def puddle_step(act: ActFn, trials: int = 200, seed: int = 0) -> dict[str, Any]:
         if len(drop) == 0:
             continue
         t0 = drop[0]
-        ok = np.nonzero(np.abs(mu_hat[t0:, i] - mu[t0:, i]) < 0.1)[0]
-        latencies.append(ok[0] * dt_ms if len(ok) else np.nan)
+        # "Noticed" = the estimate has fallen by at least half of the true drop. (An earlier
+        # definition, |μ̂ − μ| < 0.1, was also met when the car simply left the puddle.)
+        true_drop = base[i] - mu[t0:, i].min()
+        noticed = np.nonzero(mu_hat[t0:, i] <= mu_hat[t0, i] - 0.5 * true_drop)[0]
+        latencies.append(noticed[0] * dt_ms if len(noticed) else np.nan)
     lat = np.array(latencies)
     finite = lat[np.isfinite(lat)]
-    # Representative series: the median-latency trial, from 1 s before the drop to 3 s after.
+    # Representative series: the median trial if any noticed, else the first trial.
     rep = int(np.nanargmin(np.abs(lat - np.nanmedian(lat)))) if len(finite) else 0
-    drop0 = int(np.nonzero(mu[:, rep] < base[rep] - 0.1)[0][0]) if len(finite) else 0
+    drop0 = int(np.nonzero(mu[:, rep] < base[rep] - 0.1)[0][0]) if len(lat) else 0
     lo, hi = max(0, drop0 - 20), min(mu.shape[0], drop0 + 60)
     return {
         "latency_ms": {
@@ -402,7 +416,11 @@ def puddle_step(act: ActFn, trials: int = 200, seed: int = 0) -> dict[str, Any]:
             if len(finite)
             else None,
             "trials": int(len(lat)),
-            "never_settled": int(np.sum(~np.isfinite(lat))),
+            "noticed": int(len(finite)),
+            "definition": (
+                "time from the true rear grip dropping by 0.1 until the estimate "
+                "has fallen by half the true drop"
+            ),
         },
         "series": {
             "t_ms": [float((t - drop0) * dt_ms) for t in range(lo, hi)],

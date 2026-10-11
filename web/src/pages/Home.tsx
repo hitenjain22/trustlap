@@ -9,15 +9,17 @@ import {
   benchHeadline,
   bestFitTrack,
   loadBench,
+  loadMetrics,
   loadShowcase,
   type Bench,
 } from '../data/artifacts.ts'
+import type { Metrics } from '../data/schemas.ts'
 import { useLiveSim } from '../hooks/useLiveSim.ts'
 
 const HERO_CARS = 48
 const INITIAL_RAIN = 0.4
-/** Story steps that are live on the site (0-based): physics engine, curriculum. */
-const BUILT_STEPS = [0, 2]
+/** Story steps that are live on the site (0-based). */
+const BUILT_STEPS = [0, 1, 2, 3, 4]
 
 /** Home: live hero with self-taught cars + the build story (SPEC 10.2). */
 export default function Home() {
@@ -125,9 +127,13 @@ export default function Home() {
 
 function Story() {
   const [bench, setBench] = useState<Bench | null>(null)
+  const [metrics, setMetrics] = useState<Metrics | null>(null)
   useEffect(() => {
     loadBench().then(setBench, () => setBench(null))
+    loadMetrics().then(setMetrics, () => setMetrics(null))
   }, [])
+  const latency = metrics?.headline?.puddle_latency_ms?.median
+  const ece = metrics?.calibration?.ece
   const head = bench ? benchHeadline(bench) : null
   const steps = strings.story.steps
   return (
@@ -161,7 +167,11 @@ function Story() {
                 </span>
               </p>
               <h3 className="h3 mt-3">{step.title}</h3>
-              <p className="mt-2 max-w-[52ch] text-text-2">{body}</p>
+              <p className="mt-2 max-w-[52ch] text-text-2">
+                {body}
+                {i === 3 && latency != null && ` ${steps[3].measured(Math.round(latency))}`}
+                {i === 4 && ece != null && ` ${steps[4].measured(ece.toFixed(3))}`}
+              </p>
               {i === 0 && bench && (
                 <p className="mt-3 text-[13px] text-text-3">
                   {strings.story.benchSource(bench.created_utc.slice(0, 10), bench.git_sha)}

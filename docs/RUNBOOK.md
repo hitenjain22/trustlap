@@ -69,9 +69,47 @@ python -m trustlap.bench --out runs/bench.json         # throughput (GPU rows on
 
 Known-good Colab setup: Tesla T4 (15 GB), Colab's preinstalled JAX **0.11.1** with CUDA, `pip install -e sim` on top (2026-10-11, commit `c0a2e73`). Full benchmark took ~25 min with the old CPU sizes; ~10 min now.
 
-## Training (Colab / Kaggle)
+## Training
 
-Filled in from M3 onward.
+### Overnight CPU run (what's published now)
+
+```bash
+cd sim && source .venv/bin/activate
+python -m trustlap.train --agent blind --env-steps 40e6 --out runs/blind --seed 1          # ~45 min
+python -m trustlap.train --agent teacher --population 4 --env-steps 20e6 --out runs/teacher --seed 2   # ~70 min
+python -m trustlap.student --teacher runs/teacher/final.msgpack --out runs/students --env-steps 8e6 --members 5 --envs 512 --seed 3   # ~25 min
+python -m trustlap.evaluate --blind runs/blind/final.msgpack --teacher runs/teacher/final.msgpack \
+    --students runs/students/students.msgpack --seeds 2 --out runs/eval                    # ~20 min
+```
+
+### Full-size GPU run on Kaggle (recommended next step)
+
+1. Go to https://www.kaggle.com → sign in → **Create → New Notebook**.
+2. **File → Import Notebook → GitHub** → paste `hitenjain22/trustlap` → pick `sim/notebooks/train_full.ipynb` → **Import**.
+3. Right panel → **Session options**: **Accelerator → GPU T4 ×2** (or P100), **Internet → On** (needs a phone-verified Kaggle account).
+4. Top right: **Save Version** → **Save & Run All (Commit)** → **Save**. It now runs in the background (you can close the tab). Kaggle allows ~12 h per run and ~30 GPU h per week.
+5. When it finishes (the version shows "Successful"), open it → **Output** tab → download **`trustlap_full.zip`**.
+6. Unzip into `sim/runs/` (giving `sim/runs/full/...`), then from `sim/`:
+
+```bash
+python -m trustlap.export --policy blind=runs/full/blind/final.msgpack --policy teacher=runs/full/teacher/final.msgpack \
+    --students runs/full/students/students.msgpack --teacher runs/full/teacher/final.msgpack \
+    --teacher-run runs/full/teacher --blind-run runs/full/blind --metrics runs/full/eval/metrics_partial.json \
+    --golden --closed-loop blind
+cd ../web && npm test && npm run build      # parity + budgets must pass
+```
+
+7. Update the model-card compute line (`web/src/copy/strings.ts`, `how.card`) and `metrics.json`'s `train_hardware` (set in `export.py`), commit, push. If it disconnects, run all again: every stage resumes from its checkpoint.
+
+## Publishing results
+
+```bash
+python -m trustlap.export --policy blind=runs/blind/final.msgpack --policy teacher=runs/teacher/final.msgpack \
+    --students runs/students/students.msgpack --teacher runs/teacher/final.msgpack \
+    --teacher-run runs/teacher --blind-run runs/blind --metrics runs/eval/metrics_partial.json --golden --closed-loop blind
+```
+
+This writes every artifact (weights, training records, metrics, calibration), regenerates the parity fixtures, refreshes the manifest and rewrites the README's numbers block from `metrics.json`.
 
 ## Export to the website (M2)
 

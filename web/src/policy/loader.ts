@@ -32,12 +32,16 @@ export async function parseNetwork(rawJson: unknown, bin: ArrayBuffer): Promise<
   return { meta, layers }
 }
 
-/** Fetch `<base>/policies/<name>.json` and its .bin. */
-export async function loadNetwork(base: string, name: string): Promise<LoadedNetwork> {
-  const res = await fetch(`${base}/policies/${name}.json`)
+/** Fetch `<base>/<dir>/<name>.json` and its .bin (dir: "policies" or "checkpoints"). */
+export async function loadNetwork(
+  base: string,
+  name: string,
+  dir = 'policies',
+): Promise<LoadedNetwork> {
+  const res = await fetch(`${base}/${dir}/${name}.json`)
   if (!res.ok) throw new Error(`${name}.json: HTTP ${res.status}`)
   const json = await res.json()
-  const bin = await fetch(`${base}/policies/${networkFileSchema.shape.bin.parse(json.bin)}`)
+  const bin = await fetch(`${base}/${dir}/${networkFileSchema.shape.bin.parse(json.bin)}`)
   if (!bin.ok) throw new Error(`${json.bin}: HTTP ${bin.status}`)
   return parseNetwork(json, await bin.arrayBuffer())
 }

@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "artifact_version": "v1",
- "created_utc": "2026-10-11T18:43:00+00:00",
- "git_sha": "6bf66f2",
+ "created_utc": "2026-10-11T19:24:20+00:00",
+ "git_sha": "2d236b6",
  "config_hash": "f832929f904b4565fe22441782b828b914233cbffa3adff08bcc9ec7c86732b7",
  "files": [
   {
@@ -14,6 +14,11 @@
    "path": "bench.json",
    "bytes": 1629,
    "sha256": "e056793af65c6b12c6fc5dc08c1efb1ca8b367b763a4cc5ebc14cb566d9f5aa7"
+  },
+  {
+   "path": "calibration.json",
+   "bytes": 2303,
+   "sha256": "e9fc6f08de4801a25ce77befe5d812942c2db3a343391543477e2a6fc66ceaf4"
   },
   {
    "path": "checkpoints/index.json",
@@ -159,6 +164,11 @@
    "path": "lineage.json",
    "bytes": 8709,
    "sha256": "abc0917eee0d15995e63720f529342a1e9444d12b01149338c14ef2a74b61e36"
+  },
+  {
+   "path": "metrics.json",
+   "bytes": 39074,
+   "sha256": "01ed5620ff8fce9d4c7c37230735631f69ea8016c67f487663fb350de411c46f"
   },
   {
    "path": "policies/blind.bin",

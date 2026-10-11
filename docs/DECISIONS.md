@@ -104,3 +104,16 @@ Browser:
 - **Hero runs the student with one ensemble member** (48 cars × 5 students would be too heavy for phones); the Playground runs all five and shows the crash-risk estimate. Falls back to the best shipped driver when a network is missing.
 - **Each hero car gets a slightly different car** (power ×0.94–1.0, mass ×1.0–1.06, inside the training ranges) so identical deterministic drivers spread out instead of driving nose to tail.
 - **Which drivers a build offers comes from `manifest.json`** (data-driven, no hand-kept list).
+
+### 2026-10-11 (daytime: M6–M7)
+
+- **Evaluation uses 2 condition draws per track** (200 tracks × 2 = 400 laps per driver per suite) instead of 3, a SPEC 7.9 reduction; stated on the Results page.
+- **Bug found and fixed in evaluation**: the compiled-rollout cache captured the first track bank it saw, so training-bank runs reused test-bank geometry (generalization showed 2.5% vs 30%). The bank is now a jit argument; regression test in `tests/test_evaluate.py`. The full evaluation was rerun so every number comes from one coherent run.
+- **The hero e2e test now checks in-range adaptation** (rain 0 → 45%, ≥ 5% slower within 5 s) instead of "slower within 1 s at 100% rain": the student must feel the grip change through its history (measured: −2% at 2.5 s, −10% at 5 s, no crashes), and 100% rain is outside what the overnight drivers trained on (28 of 48 crash).
+- **Negative and undefined headlines are shown as such**: the crash-reduction tile flips to "More crashes than the blind driver" when negative; the teacher-gap tile says "not meaningful" when the teacher didn't beat the blind driver (the formula's sign flips there).
+- **Chart titles state findings only when data exists**; missing data gets a neutral title plus "Not computed yet".
+- **The Lab's learning-rate chart shows the base rate** (the logged value includes the scheduled linear decay; PBT tunes the base).
+- **README numbers are generated** by `export.py` from `metrics.json` between `<!-- metrics:start/end -->` markers (SPEC rule 4).
+- **OG image** is a real frame of the live simulation (canvas pixels, not an element screenshot, which would include the page text) plus the wordmark and headline, made by `web/scripts/og-image.mjs`.
+- **Full-size GPU pipeline** (`sim/scripts/full_pipeline.sh`, `sim/notebooks/train_full.ipynb`) runs the SPEC 7.9 budgets with resume-on-restart; it's the recommended way to replace tonight's CPU results.
+- **Puddle step-response metric corrected.** The first definition (time until |μ̂_rear − μ_rear| < 0.1 after the grip drop) was also satisfied when the car simply *left* the puddle, so it reported a misleading "350 ms". Now "noticed" means the estimate has fallen by at least half of the true drop; trials where that never happens count as not noticed and the count is reported. Result: 0 of 200 on a straight, and 0 of 100 in an extra mid-corner test (`puddle_s_m=857` on the stadium bend). The site, README and explainer now say the student doesn't detect individual puddles, and that its better wet/puddle completion isn't explained yet (plausibly caution inherited from the teacher, untested).

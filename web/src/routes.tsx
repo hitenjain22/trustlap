@@ -6,6 +6,8 @@ import NotFound from './pages/NotFound.tsx'
 
 const Playground = lazy(() => import('./pages/Playground.tsx'))
 const Results = lazy(() => import('./pages/Results.tsx'))
+const Lab = lazy(() => import('./pages/Lab.tsx'))
+const How = lazy(() => import('./pages/How.tsx'))
 
 export const router = createBrowserRouter([
   {
@@ -13,6 +15,22 @@ export const router = createBrowserRouter([
     element: <App />,
     children: [
       { index: true, element: <Home /> },
+      {
+        path: 'how-it-works',
+        element: (
+          <Suspense fallback={null}>
+            <How />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'lab',
+        element: (
+          <Suspense fallback={null}>
+            <Lab />
+          </Suspense>
+        ),
+      },
       {
         path: 'results',
         element: (

@@ -453,6 +453,68 @@ def _training_totals(runs: list[Path]) -> tuple[int, float]:
     return int(steps), round(minutes, 1)
 
 
+def readme_block(metrics: dict[str, Any]) -> str:
+    """README headline bullets (SPEC 16.1), generated from metrics.json: never hand-typed."""
+    h = metrics["headline"]
+    s = metrics.get("suites", {})
+
+    def comp(suite: str, driver: str) -> str:
+        return f"{s[suite][driver]['completion']['value']:.0%}"
+
+    lines = []
+    if "max_parallel_cars" in h and "gpu_speedup_vs_cpu" in h:
+        lines.append(
+            f"- {h['max_parallel_cars']:,} cars simulated in parallel on one T4 GPU, "
+            f"{h['gpu_speedup_vs_cpu']:,.0f}× faster than the same JAX code on its CPU"
+        )
+    if "train_env_steps_total" in h:
+        lines.append(
+            f"- PPO drivers with population-based training and an automatic curriculum: "
+            f"{h['train_env_steps_total'] / 1e6:,.0f}M env steps in "
+            f"{h['train_wall_minutes']:.0f} min on a {h['train_hardware']}"
+        )
+    if {"puddles", "wet", "worn"} <= s.keys():
+        lat = h.get("puddle_latency_ms", {}).get("median")
+        lines.append(
+            "- A learned adaptation module estimates road grip from 1 s of motion"
+            + (f" (notices a puddle in ~{lat:.0f} ms)" if lat is not None else "")
+            + ": laps completed vs a non-adaptive driver on unseen tracks: "
+            f"puddles {comp('puddles', 'student')} vs {comp('puddles', 'blind')}, "
+            f"wet {comp('wet', 'student')} vs {comp('wet', 'blind')}, "
+            f"worn tires {comp('worn', 'student')} vs {comp('worn', 'blind')}"
+        )
+    red = h.get("student_crash_reduction_vs_blind_combined")
+    if red and red.get("value") is not None:
+        v, (lo, hi) = red["value"], red["ci"]
+        word = "fewer" if v >= 0 else "more"
+        lines.append(
+            f"- Honest headline: in the everything-at-once conditions the student crashes "
+            f"{abs(v):.0%} {word} than the non-adaptive driver "
+            + (
+                f"(95% CI {lo:.0%} to {hi:.0%})"
+                if v >= 0
+                else f"(95% CI {-hi:.0%} to {-lo:.0%} more)"
+            )
+        )
+    cal = metrics.get("calibration", {})
+    if "ece" in cal:
+        lines.append(
+            f"- Ensemble crash-risk estimate: calibrated (ECE {cal['ece']:.3f}) "
+            "but weakly predictive "
+            f"(AUROC {cal['auroc']:.2f})"
+        )
+    return "\n".join(lines)
+
+
+def update_readme(metrics: dict[str, Any], readme: Path = REPO / "README.md") -> None:
+    text = readme.read_text()
+    start, end = "<!-- metrics:start -->", "<!-- metrics:end -->"
+    if start in text and end in text:
+        head, rest = text.split(start, 1)
+        _, tail = rest.split(end, 1)
+        readme.write_text(f"{head}{start}\n{readme_block(metrics)}\n{end}{tail}")
+
+
 def export_metrics(partial: Path, runs: list[Path], out_dir: Path = ARTIFACTS) -> dict[str, Any]:
     """Assemble metrics.json from the evaluation output, the benchmark and the training logs."""
     metrics = json.loads(partial.read_text())
@@ -473,12 +535,13 @@ def export_metrics(partial: Path, runs: list[Path], out_dir: Path = ARTIFACTS) -
     steps, minutes = _training_totals(runs)
     head["train_env_steps_total"] = steps
     head["train_wall_minutes"] = minutes
-    head["train_hardware"] = "laptop CPU (Intel, 4 threads), JAX 0.4.38"
+    head["train_hardware"] = "laptop CPU (Intel, 4 threads) with JAX 0.4.38"
     metrics["git_sha"] = _git_sha()
     _write_json(out_dir / "metrics.json", metrics)
     cal = metrics["calibration"]
     table = {"u": cal["table"]["u"], "p": cal["table"]["p"], "tau_default": cal["tau_default"]}
     _write_json(out_dir / "calibration.json", table)
+    update_readme(metrics)
     return metrics
 
 

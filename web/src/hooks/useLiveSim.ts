@@ -37,6 +37,8 @@ export interface LiveSimOptions {
   driver: DriverKind
   ghosts?: DriverKind[]
   showFocus?: boolean
+  /** Training Lab: drive the teacher cars with this timeline checkpoint. */
+  checkpoint?: string
   /** How many students the student driver runs (1 = light, no crash-risk estimate). */
   ensembleMembers?: number
   intro: boolean
@@ -110,6 +112,7 @@ export function useLiveSim(opts: LiveSimOptions) {
       artifactBase: `${window.location.origin}/artifacts/${ARTIFACT_VERSION}`,
       studentMembers: students,
       ensembleMembers: o.ensembleMembers,
+      checkpoint: o.checkpoint,
       calibration: calibration ? { u: calibration.u, p: calibration.p } : undefined,
     })
     let trackSeed = 0
@@ -238,5 +241,18 @@ export function useLiveSim(opts: LiveSimOptions) {
     await apiRef.current?.setDrivers(driver, ghosts)
   }, [])
 
-  return { canvasRef, status, setConditions, setTrack, control, setSpeed, setDrivers }
+  const setCheckpoint = useCallback(async (name: string) => {
+    await apiRef.current?.setCheckpoint(name)
+  }, [])
+
+  return {
+    canvasRef,
+    status,
+    setConditions,
+    setTrack,
+    control,
+    setSpeed,
+    setDrivers,
+    setCheckpoint,
+  }
 }

@@ -131,6 +131,12 @@ function applyValues(cond: Conditions, d?: Pick<Driver, 'powerScale' | 'massScal
 }
 
 async function ensurePolicies(kinds: DriverKind[]): Promise<void> {
+  if (opts.checkpoint && !policies.has('teacher')) {
+    policies.set(
+      'teacher',
+      new ActorPolicy(await loadNetwork(opts.artifactBase, opts.checkpoint, 'checkpoints')),
+    )
+  }
   const unique = [...new Set(kinds)]
   const needed = unique.filter((k) => (k === 'blind' || k === 'teacher') && !policies.has(k))
   const loaded = await Promise.all(needed.map((k) => loadNetwork(opts.artifactBase, k)))
@@ -447,6 +453,14 @@ const api: SimApi = {
   async setDrivers(driver, ghosts) {
     await ensurePolicies([driver, ...ghosts])
     opts = { ...opts, driver, ghosts }
+    placeCars()
+  },
+  async setCheckpoint(name: string) {
+    opts = { ...opts, checkpoint: name }
+    policies.set(
+      'teacher',
+      new ActorPolicy(await loadNetwork(opts.artifactBase, name, 'checkpoints')),
+    )
     placeCars()
   },
   async reset() {

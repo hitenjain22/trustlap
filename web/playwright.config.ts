@@ -5,7 +5,10 @@ const PORT = 4173
 /** E2E tests run against the production build served by `vite preview` (build first). */
 export default defineConfig({
   testDir: 'tests/e2e',
-  fullyParallel: true,
+  // One at a time: the live-simulation tests measure speeds, and parallel runs compete for CPU,
+  // which trips the hero's slow-device fallback and makes those measurements flaky.
+  fullyParallel: false,
+  workers: 1,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['html', { open: 'never' }], ['list']] : 'list',

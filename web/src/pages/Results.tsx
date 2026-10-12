@@ -31,6 +31,17 @@ const condName = (s: string) => strings.conditions[s as keyof typeof strings.con
 const list = (xs: string[]) =>
   xs.length <= 1 ? (xs[0] ?? '') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`
 
+/** One plain sentence about the crash-risk estimate, chosen by what the numbers show. */
+function riskLine(m: Metrics): string | null {
+  const cal = m.calibration
+  if (cal?.auroc == null) return null
+  const before = cal.baseline?.auroc
+  if (before != null && cal.auroc - before >= 0.05) {
+    return SS.riskImproved(cal.auroc.toFixed(2), before.toFixed(2))
+  }
+  return cal.ece != null && cal.ece < 0.05 && cal.auroc < 0.7 ? SS.risk : null
+}
+
 function SummaryCard({
   label,
   value,
@@ -314,11 +325,13 @@ export default function Results() {
         )
       : null,
     lat?.noticed === 0 && lat.trials ? SS.puddle(lat.trials) : null,
-    m.calibration?.ece != null &&
-    m.calibration.ece < 0.05 &&
-    m.calibration.auroc != null &&
-    m.calibration.auroc < 0.7
-      ? SS.risk
+    riskLine(m),
+    m.replication && rows.some((r) => r.heldIn)
+      ? SS.replicated(
+          rows.filter((r) => r.heldIn && r.heldIn.same === r.heldIn.of).length,
+          rows.length,
+          m.replication.seeds.length,
+        )
       : null,
   ].filter((t): t is string => t !== null)
   return (

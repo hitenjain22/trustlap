@@ -25,7 +25,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from trustlap.conditions import Conditions, sample_conditions, suite_conditions
+from trustlap.conditions import OOD_SUITES, Conditions, sample_conditions, suite_conditions
 from trustlap.config import CONFIG, config_hash, physics_hash, to_dict
 from trustlap.dynamics import CarState, control_step
 from trustlap.env import EnvState, core_step, observe, place_puddles, point_at, start_state
@@ -509,12 +509,74 @@ def readme_block(metrics: dict[str, Any]) -> str:
         )
     cal = metrics.get("calibration", {})
     if "ece" in cal:
+        lines.append(f"- {_risk_phrase(cal)}")
+    worse = [
+        SUITE_NAMES.get(d["suite"], d["suite"])
+        for d in metrics.get("paired_deltas", [])
+        if d["a"] == "student"
+        and d["b"] == "blind"
+        and d["metric"] == "completion"
+        and d["ci"][1] is not None
+        and d["ci"][1] < 0
+        and d["suite"] not in OOD_SUITES
+    ]
+    if worse:
         lines.append(
-            f"- Ensemble crash-risk estimate: calibrated (ECE {cal['ece']:.3f}) "
-            "but weakly predictive "
-            f"(AUROC {cal['auroc']:.2f})"
+            "- Where it falls short: it finishes clearly fewer laps than the non-adaptive driver "
+            f"{_and(worse)}"
+        )
+    rep = metrics.get("replication")
+    if rep:
+        agree = [a for k, a in rep["agreement"].items() if k not in OOD_SUITES]
+        held = sum(a["same_in"] == a["of"] for a in agree)
+        lines.append(
+            f"- Replicated: trained {len(rep['seeds'])} times from scratch; {held} of "
+            f"{len(agree)} per-condition verdicts came out the same every time "
+            f"(published numbers are seed {rep['primary_seed']}, fixed in advance)"
         )
     return "\n".join(lines)
+
+
+SUITE_NAMES = {
+    "dry": "on dry roads",
+    "wet": "in rain",
+    "puddles": "through puddles",
+    "wind": "in wind",
+    "worn": "on worn tires",
+    "laggy": "with laggy steering",
+    "heavy": "with a heavy car",
+    "combined": "with everything at once",
+}
+
+
+def _and(items: list[str]) -> str:
+    """'a', 'a and b', 'a, b and c'."""
+    return items[0] if len(items) == 1 else f"{', '.join(items[:-1])} and {items[-1]}"
+
+
+def _risk_phrase(cal: dict[str, Any], resume: bool = False) -> str:
+    """One honest clause about the crash-risk estimate, decided by the numbers."""
+    auroc, ece = cal.get("auroc"), cal["ece"]
+    base = (cal.get("baseline") or {}).get("auroc")
+    if auroc is not None and base is not None and auroc - base >= 0.05:
+        if resume:
+            return (
+                f"a crash-risk model (speed, curve ahead, felt grip, ensemble disagreement) "
+                f"that is calibrated (ECE {ece:.3f}) and lifted AUROC from {base:.2f} to "
+                f"{auroc:.2f}"
+            )
+        return (
+            "Crash-risk estimate from speed, the curve ahead, felt grip and ensemble "
+            f"disagreement: calibrated (ECE {ece:.3f}), AUROC {auroc:.2f} vs {base:.2f} "
+            "from disagreement alone"
+        )
+    weak = auroc is not None and auroc < 0.7
+    score = "n/a" if auroc is None else f"{auroc:.2f}"
+    if resume:
+        tail = "but weakly predictive" if weak else "and predictive"
+        return f"a crash-risk estimate that is calibrated (ECE {ece:.3f}) {tail} (AUROC {score})"
+    tail = "but weakly predictive" if weak else "and predictive"
+    return f"Ensemble crash-risk estimate: calibrated (ECE {ece:.3f}) {tail} (AUROC {score})"
 
 
 def resume_bullets(metrics: dict[str, Any]) -> str:
@@ -552,8 +614,7 @@ def resume_bullets(metrics: dict[str, Any]) -> str:
             else f"{pct(-red)} more crashes than the baseline in combined conditions"
         )
         + f", worse on dry roads ({comp('dry', 'student')} vs {comp('dry', 'blind')}), "
-        f"a calibrated but weakly predictive ensemble risk estimate (ECE {cal['ece']:.3f}, "
-        f"AUROC {cal['auroc']:.2f})"
+        f"{_risk_phrase(cal, resume=True)}"
         + (
             f", and no detection of single puddles ({pl['noticed']} of {pl['trials']})."
             if pl.get("noticed") == 0 and pl.get("trials")

@@ -80,8 +80,25 @@ export const metricsSchema = z.object({
       brier: num,
       auroc: nullableNum,
       tau_default: num.nullable().optional(),
+      /** The earlier disagreement-only risk model, scored on the same test steps. */
+      baseline: z.object({ name: z.string(), ece: num, brier: num, auroc: nullableNum }),
     })
     .partial()
+    .optional(),
+  /** Independent training seeds (sim/trustlap/replicate.py); charts use the primary seed. */
+  replication: z
+    .object({
+      seeds: z.array(z.number().int()),
+      primary_seed: z.number().int(),
+      agreement: z.record(
+        z.string(),
+        z.object({
+          primary: z.enum(['better', 'worse', 'same']).nullable(),
+          same_in: z.number().int(),
+          of: z.number().int(),
+        }),
+      ),
+    })
     .optional(),
   governor_sweep: z
     .array(

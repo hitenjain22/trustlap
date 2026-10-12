@@ -27,6 +27,8 @@ export interface ConditionRow {
   adaptive: number
   basic: number
   verdict: Verdict
+  /** In how many independent training runs the same verdict held (when replicated). */
+  heldIn?: { same: number; of: number }
 }
 
 const per100 = (v: number) => Math.round(v * 100)
@@ -44,7 +46,14 @@ export function compareConditions(m: Metrics, suites: readonly string[]): Condit
     const [lo, hi] = d?.ci ?? [null, null]
     const verdict: Verdict =
       lo != null && lo > 0 ? 'better' : hi != null && hi < 0 ? 'worse' : 'same'
-    rows.push({ suite, adaptive: per100(a), basic: per100(b), verdict })
+    const rep = m.replication?.agreement[suite]
+    rows.push({
+      suite,
+      adaptive: per100(a),
+      basic: per100(b),
+      verdict,
+      ...(rep ? { heldIn: { same: rep.same_in, of: rep.of } } : {}),
+    })
   }
   return rows
 }

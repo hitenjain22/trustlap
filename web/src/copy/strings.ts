@@ -569,6 +569,12 @@ npm ci && npm run dev`,
         `We raced the Adaptive AI against the Basic AI on ${tracks} tracks neither had ever seen, in every condition. Same tracks, same weather, same starting grid: the only difference is that one can feel the grip.`,
       unit: 'Laps finished, out of 100',
       barLabel: (driver: string, laps: number) => `${driver}: ${laps} of 100 laps`,
+      heldIn: (same: number, of: number) =>
+        same === of ? `same in all ${of} training runs` : `same in ${same} of ${of} training runs`,
+      replicated: (all: number, total: number, runs: number) =>
+        `We trained everything ${runs} times from scratch with different random seeds; ${all} of these ${total} verdicts came out the same every time. The charts show run 1, chosen before any results.`,
+      riskImproved: (now: string, before: string) =>
+        `Its crash-risk estimate now looks at speed, the curve ahead and the grip it feels, not just how unsure it is: it tells risky moments from safe ones much better (score ${now} vs ${before}, where 0.5 is guessing and 1 is perfect).`,
       verdict: {
         better: 'Adaptive AI clearly better',
         worse: 'Adaptive AI clearly worse',

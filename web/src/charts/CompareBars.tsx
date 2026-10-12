@@ -99,6 +99,11 @@ export function CompareBars({ rows }: { rows: ConditionRow[] }) {
                   {r.verdict === 'better' ? '▲ ' : r.verdict === 'worse' ? '▼ ' : '= '}
                 </span>
                 {C.verdict[r.verdict]}
+                {r.heldIn && (
+                  <span className="block text-[12px] text-text-3">
+                    {C.heldIn(r.heldIn.same, r.heldIn.of)}
+                  </span>
+                )}
               </p>
             </li>
           )

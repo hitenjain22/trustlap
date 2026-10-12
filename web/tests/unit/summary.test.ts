@@ -47,3 +47,23 @@ describe('plain-language summary', () => {
     expect(bestAiLaps(m, 'nope')).toBeNull()
   })
 })
+
+describe('replication', () => {
+  it('attaches how many training runs agreed with each verdict', () => {
+    const rep = {
+      ...m,
+      replication: {
+        seeds: [1, 2, 3],
+        primary_seed: 1,
+        agreement: {
+          wet: { primary: 'better', same_in: 3, of: 3 },
+          dry: { primary: 'worse', same_in: 2, of: 3 },
+        },
+      },
+    } as unknown as Metrics
+    const rows = compareConditions(rep, ['dry', 'wet', 'heavy'])
+    expect(rows.find((r) => r.suite === 'wet')?.heldIn).toEqual({ same: 3, of: 3 })
+    expect(rows.find((r) => r.suite === 'dry')?.heldIn).toEqual({ same: 2, of: 3 })
+    expect(rows.find((r) => r.suite === 'heavy')?.heldIn).toBeUndefined()
+  })
+})

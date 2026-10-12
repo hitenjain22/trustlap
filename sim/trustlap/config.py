@@ -330,6 +330,14 @@ class EnsembleConfig:
 
 
 @dataclass(frozen=True)
+class FinetuneConfig:
+    """Fine-tuning the driving network on the students' estimated latent (finetune.py)."""
+
+    lr: float = 1e-4  # a third of PPO's base rate: adjusting a trained driver, not relearning
+    ent_coef: float = 0.001
+
+
+@dataclass(frozen=True)
 class WebConfig:
     """Browser defaults (Appendix A)."""
 
@@ -358,6 +366,7 @@ class Config:
     curriculum: CurriculumConfig = field(default_factory=CurriculumConfig)
     student: StudentConfig = field(default_factory=StudentConfig)
     ensemble: EnsembleConfig = field(default_factory=EnsembleConfig)
+    finetune: FinetuneConfig = field(default_factory=FinetuneConfig)
     web: WebConfig = field(default_factory=WebConfig)
 
 

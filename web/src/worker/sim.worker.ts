@@ -121,6 +121,8 @@ let listener: ((snapshot: Float32Array) => void) | null = null
 let obs: Observation
 const policies = new Map<DriverKind, ActorPolicy>()
 let ensemble: StudentEnsemble | null = null
+let fallbackPolicy: ActorPolicy | null = null // Basic AI network for the dry-road fallback
+let fallbackBatch = new Float32Array(0)
 let histBatch = new Float32Array(0)
 const pool: Float32Array[] = []
 const info = createStepInfo()
@@ -177,10 +179,13 @@ async function ensurePolicies(kinds: DriverKind[]): Promise<void> {
   const needed = unique.filter((k) => (k === 'blind' || k === 'teacher') && !policies.has(k))
   const loaded = await Promise.all(needed.map((k) => loadNetwork(opts.artifactBase, k)))
   loaded.forEach((net, i) => policies.set(needed[i]!, new ActorPolicy(net)))
+  if (unique.includes('student') && opts.fallback && !fallbackPolicy) {
+    fallbackPolicy = new ActorPolicy(await loadNetwork(opts.artifactBase, 'blind'))
+  }
   if (unique.includes('student') && !ensemble) {
     const count = Math.max(1, opts.studentMembers)
     const [teacher, ...students] = await Promise.all([
-      loadNetwork(opts.artifactBase, 'teacher'),
+      loadNetwork(opts.artifactBase, opts.studentActor ? 'student_actor' : 'teacher'),
       ...Array.from({ length: count }, (_, k) => loadNetwork(opts.artifactBase, `student_${k}`)),
     ])
     ensemble = new StudentEnsemble(teacher!, students)
@@ -386,6 +391,19 @@ function networkActions(): void {
   const members = opts.ensembleMembers ?? ensemble.size
   const out = ensemble.act(obsBatch, histBatch, n, members, members > 1)
   actBatch.set(out.actions.subarray(0, 2 * n), 2 * offset)
+  const fb = opts.fallback
+  if (fb && fallbackPolicy) {
+    // Dry-road fallback (evaluate._hybrid): the grippier the road feels, the more the Basic AI drives.
+    if (fallbackBatch.length < 2 * n) fallbackBatch = new Float32Array(2 * n)
+    fallbackPolicy.act(obsBatch, n, fallbackBatch)
+    for (let b = 0; b < n; b++) {
+      const w = Math.min(1, Math.max(0, (out.gripMean[2 * b + 1]! - fb.threshold) / fb.blend + 0.5))
+      for (let j = 0; j < 2; j++) {
+        const i = 2 * (offset + b) + j
+        actBatch[i] = w * fallbackBatch[2 * b + j]! + (1 - w) * actBatch[i]!
+      }
+    }
+  }
   students.forEach((car, b) => {
     car.muHat[0] = out.gripMean[2 * b]!
     car.muHat[1] = out.gripMean[2 * b + 1]!

@@ -55,6 +55,9 @@ from trustlap.train import load_policy
 ActFn = Callable[..., tuple[jax.Array, jax.Array, jax.Array]]
 
 DRIVERS = ("scripted", "blind", "student", "student_governed", "teacher")
+# Dry-road fallback thresholds tried on the validation bank (None = never fall back).
+HYBRID_GRID = (None, 1.1, 1.05, 1.0, 0.95, 0.9, 0.85, 0.8)
+TRAINED_SUITES = tuple(s for s in SUITES if s not in OOD_SUITES)
 CRASH_HORIZON_STEPS = int(round(CONFIG.ensemble.crash_horizon_s / CONFIG.time.control_dt_s))
 NAN2 = jnp.full(2, jnp.nan)
 NAN_F = jnp.full(len(RISK_FEATURES), jnp.nan)
@@ -121,6 +124,29 @@ def _student(teacher_path: Path, students_path: Path) -> ActFn:
         f = risk_features(state, bank, out.uncertainty, out.grip_mean[1])
         action = governed_action(out.action, risk_predict(risk, f), tau)
         return action, f, out.grip_mean
+
+    return act
+
+
+HYBRID_BLEND = 0.1  # μ units: width of the soft hand-over around the threshold
+
+
+def _hybrid(student: ActFn, blind: ActFn, grip_threshold: float) -> ActFn:
+    """Adaptive AI with a dry-road fallback: the more the road *feels* grippy (the students'
+    rear-grip estimate above `grip_threshold`), the more it drives like the Basic AI. A soft
+    blend, w = clip((μ̂_rear − threshold) / 0.1 + 0.5, 0, 1), so control never jumps."""
+
+    def act(
+        state: EnvState,
+        obs: Observation,
+        bank: TrackBank,
+        risk: RiskModel,
+        tau: jax.Array,
+    ) -> Any:
+        a_s, f, grip = student(state, obs, bank, risk, tau)
+        a_b, _, _ = blind(state, obs, bank, risk, tau)
+        w = jnp.clip((grip[1] - grip_threshold) / HYBRID_BLEND + 0.5, 0.0, 1.0)
+        return w * a_b + (1.0 - w) * a_s, f, grip
 
     return act
 
@@ -506,7 +532,8 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
         "blind": _policy(args.blind),
         "teacher": _policy(args.teacher),
     }
-    student = _student(args.teacher, args.students)
+    # The Adaptive AI drives with the fine-tuned actor when one is given (finetune.py).
+    student = _student(args.student_actor or args.teacher, args.students)
     drivers["student"] = student
     log = lambda *a: print(f"[eval {time.time() - t_start:6.0f}s]", *a, flush=True)  # noqa: E731
 
@@ -548,6 +575,34 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
         f"{args.max_slowdown:.0%} lap-time cost)"
     )
     drivers["student_governed"] = student
+    names = list(DRIVERS)
+
+    # 1b. Dry-road fallback: pick the grip threshold on the VALIDATION bank (mean completion
+    # over the trained suites), then race it once on the test bank like every other driver.
+    hybrid_choice = None
+    if args.hybrid:
+        scores = []
+        for g in HYBRID_GRID:
+            act = student if g is None else _hybrid(student, drivers["blind"], g)
+            comp = []
+            for suite in TRAINED_SUITES:
+                tids, conds = suite_batch(val, suite, 1, val_tracks, args.seed + 3)
+                comp.append(
+                    run(env_val, tids, conds, act, calib, seed=args.seed + 3).completed.mean()
+                )
+            scores.append(float(np.mean(comp)))
+            log(f"validation fallback threshold {g}: mean completion {scores[-1]:.3f}")
+        best = int(np.argmax(scores))
+        hybrid_choice = {
+            "threshold": HYBRID_GRID[best],
+            "validation": dict(zip(map(str, HYBRID_GRID), scores, strict=True)),
+        }
+        g_best = HYBRID_GRID[best]
+        drivers["hybrid"] = (
+            student if g_best is None else _hybrid(student, drivers["blind"], g_best)
+        )
+        names.append("hybrid")
+        log(f"chosen fallback threshold {g_best}")
 
     # 2. Every suite × driver on the TEST bank, paired.
     suites_out: dict[str, Any] = {}
@@ -556,7 +611,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
     for suite in SUITES:
         tids, conds = suite_batch(test, suite, args.seeds, test_tracks, args.seed + 10)
         raw[suite] = {}
-        for name in DRIVERS:
+        for name in names:
             raw[suite][name] = run(
                 env_test,
                 tids,
@@ -567,9 +622,9 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                 seed=args.seed + 10,
                 tau=tau_default if name == "student_governed" else float("inf"),
             )
-        all_done = np.all([raw[suite][d].completed for d in DRIVERS], axis=0)
+        all_done = np.all([raw[suite][d].completed for d in names], axis=0)
         suites_out[suite] = {}
-        for name in DRIVERS:
+        for name in names:
             laps = raw[suite][name]
             paired_time = np.where(all_done, laps.lap_time_s, np.nan)
             entry = {
@@ -590,6 +645,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
             ("student", "scripted"),
             ("teacher", "student"),
             ("student_governed", "student"),
+            *((("hybrid", "blind"), ("hybrid", "student")) if "hybrid" in names else ()),
         ):
             for metric, attr in (("completion", "completed"), ("crash", "crashed")):
                 diff = getattr(raw[suite][a], attr).astype(float) - getattr(
@@ -607,7 +663,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
         s = suites_out[suite]
         log(
             f"{suite:14s} completion: "
-            + "  ".join(f"{d} {s[d]['completion']['value']:.3f}" for d in DRIVERS)
+            + "  ".join(f"{d} {s[d]['completion']['value']:.3f}" for d in names)
         )
 
     # 3. Headline numbers.
@@ -715,6 +771,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
             "tau_default": tau_default,
         },
         "governor_sweep": sweep,
+        "fallback": hybrid_choice,
         "puddle_step": step["series"],
         "generalization": gen,
     }
@@ -727,6 +784,17 @@ def main() -> None:
     parser.add_argument("--blind", type=Path, default=None)
     parser.add_argument("--teacher", type=Path, required=True)
     parser.add_argument("--students", type=Path, required=True)
+    parser.add_argument(
+        "--student-actor",
+        type=Path,
+        default=None,
+        help="fine-tuned driving network for the Adaptive AI (finetune.py); default: the teacher",
+    )
+    parser.add_argument(
+        "--hybrid",
+        action="store_true",
+        help="also evaluate the dry-road fallback (threshold chosen on validation)",
+    )
     parser.add_argument("--test-bank", type=Path, default=Path("runs/banks/test.npz"))
     parser.add_argument("--val-bank", type=Path, default=Path("runs/banks/validation.npz"))
     parser.add_argument("--train-bank", type=Path, default=Path("runs/banks/train.npz"))
@@ -748,7 +816,9 @@ def main() -> None:
     args.out.mkdir(parents=True, exist_ok=True)
     if args.puddle_only:
         metrics = json.loads(args.puddle_only.read_text())
-        step = puddle_step(_student(args.teacher, args.students), seed=args.seed)
+        step = puddle_step(
+            _student(args.student_actor or args.teacher, args.students), seed=args.seed
+        )
         metrics["headline"]["puddle_latency_ms"] = step["latency_ms"]
         metrics["puddle_step"] = step["series"]
         metrics["protocol"]["puddle_step_recomputed_utc"] = dt.datetime.now(

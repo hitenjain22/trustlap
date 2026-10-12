@@ -3,6 +3,7 @@
 import jax
 import jax.numpy as jnp
 import numpy as np
+import pytest
 
 from trustlap.conditions import suite_conditions
 from trustlap.env import Env
@@ -55,3 +56,21 @@ def test_notice_latencies_window_and_control() -> None:
     assert lat[0] == 100.0
     assert np.isnan(lat[1]) and np.isnan(lat[2])
     assert false_alarms == 1
+
+
+def test_dry_road_fallback_blends_by_felt_grip() -> None:
+    """Felt grip well above the threshold → the Basic AI drives; well below → the Adaptive AI."""
+    import jax.numpy as jnp
+
+    from trustlap.evaluate import HYBRID_BLEND, _hybrid
+
+    def fake(action: float, grip_rear: float):
+        def act(state, obs, bank, risk, tau):
+            return jnp.array([action, action]), jnp.zeros(4), jnp.array([1.0, grip_rear])
+
+        return act
+
+    for grip, expected in ((1.2, -1.0), (0.6, 1.0), (1.0, 0.0)):
+        hybrid = _hybrid(fake(1.0, grip), fake(-1.0, grip), grip_threshold=1.0)
+        a, _, _ = hybrid(None, None, None, None, None)
+        assert float(a[0]) == pytest.approx(expected, abs=1e-6), (grip, HYBRID_BLEND)

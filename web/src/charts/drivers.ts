@@ -1,5 +1,6 @@
 /** Driver identity for charts (SPEC 11.3): token color + dash pattern + display name. */
-export type ChartDriver = 'student' | 'student_governed' | 'teacher' | 'blind' | 'scripted'
+export type ChartDriver =
+  'student' | 'student_governed' | 'hybrid' | 'teacher' | 'blind' | 'scripted'
 
 export const DRIVER_STYLE: Record<
   ChartDriver,
@@ -16,6 +17,12 @@ export const DRIVER_STYLE: Record<
     dash: '2 3',
     label: 'Adaptive AI + safety governor',
     marker: 'ring',
+  },
+  hybrid: {
+    color: 'var(--drv-student)',
+    dash: '6 3',
+    label: 'Adaptive AI + dry-road fallback',
+    marker: 'diamond',
   },
   teacher: {
     color: 'var(--drv-teacher)',

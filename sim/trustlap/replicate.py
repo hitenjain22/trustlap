@@ -74,9 +74,12 @@ def main() -> None:
     parser.add_argument("--seeds", type=int, nargs="+", required=True)
     parser.add_argument("--primary", type=int, default=1)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument(
+        "--eval-dir", default="eval", help="per-seed evaluation folder (eval, or eval_ft)"
+    )
     args = parser.parse_args()
     per_seed = {
-        s: json.loads((args.root / f"seed{s}" / "eval" / "metrics_partial.json").read_text())
+        s: json.loads((args.root / f"seed{s}" / args.eval_dir / "metrics_partial.json").read_text())
         for s in args.seeds
     }
     args.out.write_text(json.dumps(combine(per_seed, args.primary), indent=1))

@@ -112,6 +112,11 @@ export interface SimInit {
   artifactBase: string
   /** Students available (from the manifest) and how many to run (1 = light mode, no uncertainty). */
   studentMembers: number
+  /** The build ships a fine-tuned driving network for the Adaptive AI (policies/student_actor). */
+  studentActor?: boolean
+  /** Dry-road fallback for the Adaptive AI (calibration.json): blend toward the Basic AI as the
+   *  felt rear grip rises past `threshold` (w = clip((μ̂ − threshold)/blend + 0.5, 0, 1)). */
+  fallback?: { threshold: number; blend: number }
   ensembleMembers?: number
   /** Crash-risk model or the older disagreement table (calibration.json), if computed. */
   calibration?: RiskCalibration

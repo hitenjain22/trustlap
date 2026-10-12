@@ -643,7 +643,11 @@ def update_readme(metrics: dict[str, Any], readme: Path = REPO / "README.md") ->
 
 
 def export_metrics(
-    partial: Path, runs: list[Path], train_hardware: str, out_dir: Path = ARTIFACTS
+    partial: Path,
+    runs: list[Path],
+    train_hardware: str,
+    publish_fallback: bool = False,
+    out_dir: Path = ARTIFACTS,
 ) -> dict[str, Any]:
     """Assemble metrics.json from the evaluation output, the benchmark and the training logs.
 
@@ -678,6 +682,11 @@ def export_metrics(
         table = {"model": cal["model"], "tau_default": cal["tau_default"]}
     else:
         table = {"u": cal["table"]["u"], "p": cal["table"]["p"], "tau_default": cal["tau_default"]}
+    fb = metrics.get("fallback") or {}
+    if publish_fallback and fb.get("threshold") is not None:
+        from trustlap.evaluate import HYBRID_BLEND
+
+        table["fallback"] = {"threshold": fb["threshold"], "blend": HYBRID_BLEND}
     _write_json(out_dir / "calibration.json", table)
     update_readme(metrics)
     update_resume(metrics)
@@ -1106,11 +1115,25 @@ def main() -> None:
     parser.add_argument("--blind-run", type=Path, default=None, help="blind run dir")
     parser.add_argument("--metrics", type=Path, default=None, help="evaluate.py output to publish")
     parser.add_argument(
+        "--student-actor",
+        type=Path,
+        default=None,
+        help="fine-tuned driving network for the Adaptive AI (finetune.py → actor.msgpack)",
+    )
+    parser.add_argument(
+        "--publish-fallback",
+        action="store_true",
+        help="let the browser's Adaptive AI use the dry-road fallback chosen on validation",
+    )
+    parser.add_argument(
         "--train-hardware",
         default=None,
         help='where the runs trained, e.g. "NVIDIA T4 GPU (Kaggle)"; required with --metrics',
     )
     args = parser.parse_args()
+    if args.student_actor:
+        meta_a = export_actor_policy(args.student_actor, "student_actor")
+        print(f"policy → policies/student_actor.json ({meta_a['bytes'] / 1024:.0f} KB weights)")
     policies = dict(item.split("=", 1) for item in args.policy)
     policies = {k: Path(v) for k, v in policies.items()}
     for name, path in policies.items():
@@ -1126,7 +1149,7 @@ def main() -> None:
     if args.metrics:
         student_run = args.students.parent if args.students else None
         runs = [p for p in (args.blind_run, args.teacher_run, student_run) if p]
-        export_metrics(args.metrics, runs, args.train_hardware)
+        export_metrics(args.metrics, runs, args.train_hardware, args.publish_fallback)
         print("metrics → metrics.json, calibration.json")
     if not args.only_golden:
         export_artifacts()
@@ -1141,7 +1164,8 @@ def main() -> None:
             "jax_version": jax.__version__,
         }
         _write_json(
-            GOLDEN / "students.json", {**meta, **golden_students(args.students, args.teacher)}
+            GOLDEN / "students.json",
+            {**meta, **golden_students(args.students, args.student_actor or args.teacher)},
         )
         print("golden → web/tests/parity/golden/students.json")
 

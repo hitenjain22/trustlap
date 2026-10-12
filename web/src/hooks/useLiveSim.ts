@@ -138,6 +138,7 @@ export function useLiveSim(opts: LiveSimOptions) {
     apiRef.current = api
     let students = 0
     let calibration: Calibration | null = null
+    let studentActor = false
     // Built from the latest conditions and drivers, so a restart (slow device) keeps them.
     const initArgs = (
       cfg: SimConfig,
@@ -156,6 +157,8 @@ export function useLiveSim(opts: LiveSimOptions) {
       ghosts: driversRef.current.ghosts,
       artifactBase: `${window.location.origin}/artifacts/${ARTIFACT_VERSION}`,
       studentMembers: students,
+      studentActor,
+      fallback: calibration && 'fallback' in calibration ? calibration.fallback : undefined,
       ensembleMembers: o.ensembleMembers,
       checkpoint: o.checkpoint,
       calibration: calibration
@@ -198,6 +201,7 @@ export function useLiveSim(opts: LiveSimOptions) {
         calibration = cal
         const files = manifest.files.map((f) => f.path)
         students = studentCount(files)
+        studentActor = files.includes('policies/student_actor.json')
         const available = availableDrivers(files)
         // Fall back to the best shipped driver if the requested one isn't in this build.
         const pick = (k: DriverKind) =>

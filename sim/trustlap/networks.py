@@ -74,6 +74,13 @@ class ActorCritic(nn.Module):
         x = obs if z is None else jnp.concatenate([obs, z], axis=-1)
         return self.actor(x)
 
+    def with_latent(
+        self, obs: jax.Array, z: jax.Array, privileged: jax.Array
+    ) -> tuple[jax.Array, jax.Array, jax.Array]:
+        """(action mean, log std, value) acting on a given latent z instead of the encoder's
+        (fine-tuning the actor on the student's estimate; the critic still sees privileged)."""
+        return self.act(obs, z), self.log_std, self.value(obs, privileged)
+
     def value(self, obs: jax.Array, privileged: jax.Array) -> jax.Array:
         return self.critic(jnp.concatenate([obs, privileged], axis=-1))[..., 0]
 

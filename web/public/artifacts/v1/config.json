@@ -344,6 +344,10 @@
   "risk_lookahead_points": 20,
   "risk_min_grip": 0.1
  },
+ "finetune": {
+  "lr": 0.0001,
+  "ent_coef": 0.001
+ },
  "web": {
   "hero_cars": 48,
   "playground_cars_max": 5,

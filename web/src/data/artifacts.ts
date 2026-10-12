@@ -108,7 +108,11 @@ const riskModelSchema = z.object({
 })
 /** Either the logistic + isotonic risk model, or the earlier disagreement-only table. */
 export const calibrationSchema = z.union([
-  z.object({ model: riskModelSchema, tau_default: z.number() }),
+  z.object({
+    model: riskModelSchema,
+    tau_default: z.number(),
+    fallback: z.object({ threshold: z.number(), blend: z.number() }).optional(),
+  }),
   z.object({
     u: z.array(z.number()).min(2),
     p: z.array(z.number().min(0).max(1)).min(2),

@@ -98,6 +98,7 @@ class Transition(NamedTuple):
     reward: jax.Array  # scaled
     terminated: jax.Array
     done: jax.Array  # terminated or truncated: cuts the GAE trace
+    z: Any = None  # latent the actor acted on when fine-tuning on an estimated z
 
 
 def gaussian_logp(x: jax.Array, mean: jax.Array, log_std: jax.Array) -> jax.Array:
@@ -155,7 +156,11 @@ class PPO:
         n_envs: int | None = None,
         rollout_len: int | None = None,
         cfg: Config = CONFIG,
+        latent_fn: Any = None,
     ) -> None:
+        """`latent_fn(obs) → z [N, latent]`: when given, the actor acts on this (frozen) latent
+        instead of encoding the privileged observation (fine-tuning on the student's estimate)."""
+        self.latent_fn = latent_fn
         self.env = env
         self.cfg = cfg
         self.n_envs = n_envs or cfg.ppo.envs_per_agent
@@ -206,7 +211,14 @@ class PPO:
             key, k_act, k_env = jax.random.split(ts.key, 3)
             obs_n = normalize(ts.obs_stats, ts.obs.policy)
             priv_n = normalize(ts.priv_stats, ts.obs.privileged)
-            mean, log_std, value = net.apply(ts.params, obs_n, priv_n)
+            if self.latent_fn is not None:
+                z = jax.lax.stop_gradient(self.latent_fn(ts.obs))
+                mean, log_std, value = net.apply(
+                    ts.params, obs_n, z, priv_n, method=ActorCritic.with_latent
+                )
+            else:
+                z = None
+                mean, log_std, value = net.apply(ts.params, obs_n, priv_n)
             action = mean + jnp.exp(log_std) * jax.random.normal(k_act, mean.shape)
             logp = gaussian_logp(action, mean, log_std)
             env_state, obs, reward, info, final_obs = self.env._step(
@@ -262,6 +274,7 @@ class PPO:
                 reward=scaled,
                 terminated=info.terminated.astype(jnp.float32),
                 done=done.astype(jnp.float32),
+                z=z,
             )
             ts = ts._replace(
                 key=key,
@@ -280,7 +293,12 @@ class PPO:
         def loss_fn(
             params: Any, mb: Transition, adv: jax.Array, target: jax.Array
         ) -> tuple[jax.Array, dict]:
-            mean, log_std, value = net.apply(params, mb.obs, mb.priv)
+            if self.latent_fn is not None:
+                mean, log_std, value = net.apply(
+                    params, mb.obs, mb.z, mb.priv, method=ActorCritic.with_latent
+                )
+            else:
+                mean, log_std, value = net.apply(params, mb.obs, mb.priv)
             logp = gaussian_logp(mb.action, mean, log_std)
             log_ratio = logp - mb.logp
             ratio = jnp.exp(log_ratio)

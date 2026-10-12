@@ -4,6 +4,7 @@ import { Button } from '../components/Button.tsx'
 import { DiceIcon, LineIcon } from '../components/icons.tsx'
 import { accent, STEP_ACCENTS, STEP_ICONS } from '../styles/accents.ts'
 import { LiveCanvas } from '../components/LiveCanvas.tsx'
+import { SideBySide } from '../components/SideBySide.tsx'
 import { Slider } from '../components/Slider.tsx'
 import { REPO_URL, strings } from '../copy/strings.ts'
 import { bestFitTrack, loadMetrics, loadShowcase } from '../data/artifacts.ts'
@@ -122,6 +123,7 @@ export default function Home() {
           {strings.hero.readout(status.cars, status.leaderLap, status.crashes)}
         </p>
       </section>
+      <SideBySide />
       <Story />
     </>
   )

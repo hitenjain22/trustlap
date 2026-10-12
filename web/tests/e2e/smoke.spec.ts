@@ -177,3 +177,17 @@ test('playground: hovering or focusing a driver explains it', async ({ page }) =
   ).toBeVisible()
   await expect(teacher).toHaveAccessibleDescription(/told the true conditions/)
 })
+
+test('home: the side-by-side starts when scrolled to and counts crashes per driving time', async ({
+  page,
+}) => {
+  test.setTimeout(60_000)
+  await page.goto('/')
+  await page.locator('#sbs-title').scrollIntoViewIfNeeded()
+  const counters = page
+    .locator('#sbs-title')
+    .locator('..')
+    .getByText(/crash(es)? in \d+ s driven/)
+  await expect(counters).toHaveCount(2, { timeout: 20_000 })
+  await expect(counters.first()).not.toHaveText(/in 0 s driven/, { timeout: 20_000 })
+})

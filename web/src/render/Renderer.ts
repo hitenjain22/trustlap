@@ -12,7 +12,7 @@ import {
   type DriverKind,
   type TrackGeometry,
 } from '../worker/protocol.ts'
-import { fitCamera, type Camera } from './camera.ts'
+import { fitCamera, sx, sy, type Camera } from './camera.ts'
 import { carScale, drawCars, drawHeadlights, type CarPose } from './layers/cars.ts'
 import { drawPuddles } from './layers/puddles.ts'
 import { RainLayer } from './layers/rain.ts'
@@ -24,6 +24,7 @@ import { readPalette, withAlpha, type Palette } from './palette.ts'
 const STEP_MS = 50
 const INTRO_MS = 900
 const SKID_LIFETIME_MS = 60_000
+const TRAIL_POINTS = 60 // 3 s of 20 Hz snapshots
 const CHASE_ZOOM = 3 // at least × the overview scale (SPEC 11.7) …
 const CHASE_VIEW_M = 160 // … and close enough that the canvas spans at most this many meters
 const CHASE_OMEGA = 5 // rad/s: critically damped follow, settles in about a second
@@ -78,6 +79,16 @@ export class Renderer {
   camera: 'overview' | 'chase' = 'overview'
   /** Tire-force arrows on the focused car. */
   showForces = false
+  /** Grip trail behind the focused car: teal where its felt grip is right, coral where wrong. */
+  gripTrail = false
+  private trail = {
+    x: new Float32Array(TRAIL_POINTS),
+    y: new Float32Array(TRAIL_POINTS),
+    err: new Float32Array(TRAIL_POINTS),
+    n: 0,
+    head: 0,
+    step: -1,
+  }
   /** Confidence halo when the focused car's crash risk passes this (null = off). */
   haloTau: number | null = null
   /** Driver names for Chase-camera labels. */
@@ -314,6 +325,8 @@ export class Renderer {
         )
       }
     }
+    if (this.gripTrail && curr && focusIndex >= 0)
+      this.drawGripTrail(ctx, curr, focusIndex, cam, dpr)
     if (this.camera === 'chase' && this.labels) {
       drawLabels(ctx, this.poses, this.labels, cam, this.pal, dpr)
     }
@@ -335,6 +348,52 @@ export class Renderer {
       ctx.fillStyle = fade
       ctx.fillRect(inset, 0, 48 * dpr, h)
       ctx.restore()
+    }
+  }
+
+  /** Record the focused car's position and grip-estimate error, then draw the last 3 s. */
+  private drawGripTrail(
+    ctx: CanvasRenderingContext2D,
+    curr: Float32Array,
+    focus: number,
+    cam: Camera,
+    dpr: number,
+  ): void {
+    const t = this.trail
+    const o = HEADER + focus * STRIDE
+    const err = Math.abs(curr[o + CarField.MuHatRear]! - curr[o + CarField.MuRear]!)
+    if (!Number.isFinite(err)) {
+      t.n = 0 // this driver doesn't estimate grip
+      return
+    }
+    if (curr[1] !== t.step) {
+      t.step = curr[1]!
+      const jumped =
+        t.n > 0 &&
+        Math.hypot(
+          curr[o]! - t.x[(t.head + TRAIL_POINTS - 1) % TRAIL_POINTS]!,
+          curr[o + 1]! - t.y[(t.head + TRAIL_POINTS - 1) % TRAIL_POINTS]!,
+        ) > 20
+      if (jumped) t.n = 0 // respawned: start a fresh trail
+      t.x[t.head] = curr[o]!
+      t.y[t.head] = curr[o + 1]!
+      t.err[t.head] = err
+      t.head = (t.head + 1) % TRAIL_POINTS
+      t.n = Math.min(TRAIL_POINTS, t.n + 1)
+    }
+    ctx.lineCap = 'butt' // round caps overlap into a dotted look
+    for (let k = 1; k < t.n; k++) {
+      const i0 = (t.head - t.n + k - 1 + TRAIL_POINTS) % TRAIL_POINTS
+      const i1 = (i0 + 1) % TRAIL_POINTS
+      const age = k / t.n // 0 oldest → 1 newest
+      // 0 error → teal, ≥ 0.3 → coral (μ units).
+      const m = Math.min(1, t.err[i1]! / 0.3)
+      ctx.strokeStyle = withAlpha(m < 0.5 ? this.pal.teal : this.pal.coral, 0.25 + 0.65 * age)
+      ctx.lineWidth = (1.5 + 3.5 * age) * dpr
+      ctx.beginPath()
+      ctx.moveTo(sx(cam, t.x[i0]!), sy(cam, t.y[i0]!))
+      ctx.lineTo(sx(cam, t.x[i1]!), sy(cam, t.y[i1]!))
+      ctx.stroke()
     }
   }
 

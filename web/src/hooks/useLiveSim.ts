@@ -50,6 +50,8 @@ export interface LiveSimOptions {
   fitInsetLeft?: () => number
   /** Cap on rain streaks (phones use fewer; default 1,200). */
   maxRainStreaks?: number
+  /** Allow the slow-device fallback to drop cars (off where two scenes must stay comparable). */
+  allowDegrade?: boolean
 }
 
 /** The focused car's live readings (Playground telemetry), sampled at 10 Hz. */
@@ -91,6 +93,8 @@ export interface LiveSimStatus {
   cars: number
   leaderLap: number
   crashes: number
+  /** Simulated seconds since the simulation started (20 Hz steps; not reset by restarts). */
+  simTimeS: number
   degraded: boolean
   track: TrackGeometry | null
   /** Drivers this build ships (from the artifact manifest). */
@@ -109,6 +113,7 @@ export function useLiveSim(opts: LiveSimOptions) {
     cars: opts.nCars,
     leaderLap: 1,
     crashes: 0,
+    simTimeS: 0,
     degraded: false,
     track: null,
     available: ['scripted'],
@@ -168,6 +173,7 @@ export function useLiveSim(opts: LiveSimOptions) {
         // Halve the work on slow devices (SPEC 10.3) by restarting with half the cars.
         // Keeps whatever track is showing (a new, drawn or puddle-test track included).
         renderer.degrade()
+        if (o.allowDegrade === false) return // fewer rain streaks only; the field stays intact
         const half = Math.max(1, Math.floor(o.nCars / 2))
         if (half === o.nCars) return // nothing to drop (e.g. the Playground's single car)
         void api.setCarCount(half).then(() => {
@@ -221,7 +227,12 @@ export function useLiveSim(opts: LiveSimOptions) {
               }
               canvas.dataset.meanSpeed = count ? (sum / count).toFixed(2) : '0'
               canvas.dataset.step = String(snap[1])
-              setStatus((s) => ({ ...s, leaderLap: snap[2]!, crashes: snap[3]! }))
+              setStatus((s) => ({
+                ...s,
+                leaderLap: snap[2]!,
+                crashes: snap[3]!,
+                simTimeS: snap[0]!,
+              }))
             }
           }),
         )
@@ -293,7 +304,7 @@ export function useLiveSim(opts: LiveSimOptions) {
 
   /** Renderer-only view options: camera, tire-force arrows, confidence halo, chase labels. */
   const setView = useCallback(
-    (v: Partial<Pick<Renderer, 'camera' | 'showForces' | 'haloTau' | 'labels'>>) => {
+    (v: Partial<Pick<Renderer, 'camera' | 'showForces' | 'haloTau' | 'labels' | 'gripTrail'>>) => {
       const renderer = rendererRef.current
       if (renderer) Object.assign(renderer, v)
     },

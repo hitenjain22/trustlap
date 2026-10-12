@@ -11,6 +11,7 @@ import { strings } from '../copy/strings.ts'
 import { benchHeadline, loadBench, loadMetrics, type Bench } from '../data/artifacts.ts'
 import type { DriverSuite, Estimate, Metrics } from '../data/schemas.ts'
 import { CompareBars } from '../charts/CompareBars.tsx'
+import { PageHeader } from '../components/PageHeader.tsx'
 import { accent } from '../styles/accents.ts'
 import {
   bestAiLaps,
@@ -322,13 +323,12 @@ export default function Results() {
   ].filter((t): t is string => t !== null)
   return (
     <div className="mx-auto max-w-[1280px] px-4 py-12 md:px-6 md:py-16">
-      <p className="eyebrow">{S.title}</p>
-      <h1 className="mt-2 text-[40px] leading-[1.08] font-bold [font-stretch:118%] md:text-[49px]">
-        {SS.question}
-      </h1>
-      <p className="mt-3 max-w-[72ch] text-text-2">
-        {p.test_tracks ? SS.intro(p.test_tracks) : S.introMissing}
-      </p>
+      <PageHeader
+        eyebrow={S.title}
+        title={SS.question}
+        intro={p.test_tracks ? SS.intro(p.test_tracks) : S.introMissing}
+        tint="var(--teal)"
+      />
 
       {rows.length > 0 && (
         <>

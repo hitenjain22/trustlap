@@ -2,6 +2,7 @@
  * Training Lab (SPEC 10.2): watch real checkpoints drive, the population's fitness, the PBT
  * family tree, the curriculum, and how the winning lineage tuned itself. All from artifacts.
  */
+import { PageHeader } from '../components/PageHeader.tsx'
 import { scaleLinear } from 'd3-scale'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChartFrame } from '../charts/ChartFrame.tsx'
@@ -318,10 +319,7 @@ export default function Lab() {
   const source = L.source
   return (
     <div className="mx-auto max-w-[1280px] px-4 py-12 md:px-6 md:py-16">
-      <h1 className="text-[40px] leading-[1.08] font-bold [font-stretch:118%] md:text-[49px]">
-        {L.title}
-      </h1>
-      <p className="mt-3 max-w-[72ch] text-text-2">{L.intro}</p>
+      <PageHeader eyebrow={L.title} title={L.headline} intro={L.intro} tint="var(--violet)" />
       <div className="mt-12 flex flex-col gap-16">
         {checkpoints && checkpoints.length > 0 ? (
           <WatchItLearn checkpoints={checkpoints} />

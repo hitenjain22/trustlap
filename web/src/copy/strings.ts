@@ -76,6 +76,16 @@ export const strings = {
     degraded: (cars: number) => `Running ${cars} cars for smoother playback`,
     liveLabel: 'Running live in your browser',
   },
+  sideBySide: {
+    eyebrow: 'Side by side',
+    title: 'Same track, same rain',
+    body: (cars: number, rain: number) =>
+      `${cars} Adaptive AI cars on the left, ${cars} Basic AI cars on the right: the same track, ${rain}% rain with puddles, the same starting positions. The only difference is that the left ones can feel the grip.`,
+    crashesIn: (n: number, s: number) => `${n === 1 ? '1 crash' : `${n} crashes`} in ${s} s driven`,
+    canvasLabel: (driver: string) => `${driver} cars driving laps in the rain.`,
+    note: 'Live in your browser, not a recording: each run plays out a little differently. The measured comparison, on hundreds of unseen tracks, is on the Results page.',
+    restart: 'Restart both',
+  },
   story: {
     title: 'How it works, in five steps',
     intro: 'From an empty simulator to cars that feel the road. Each step is live on this site.',
@@ -179,6 +189,9 @@ export const strings = {
     conditions: 'Conditions',
     cameras: { overview: 'Overview', chase: 'Chase' },
     showForces: 'Show tire forces',
+    gripTrail: 'Show grip trail',
+    gripTrailTip:
+      'A trail behind the Adaptive AI car: teal where its sense of grip matches the road, coral where it’s off (by more than 0.15).',
     crashToast: (c: {
       kmh: number
       driver: string
@@ -266,6 +279,7 @@ export const strings = {
   },
   how: {
     title: 'How it works',
+    headline: 'Five steps to a car that feels the road',
     lead: 'Five steps, from an empty simulator to cars that drive in the rain. Each step uses a published technique; what’s new is putting them together and testing them honestly.',
     next: 'Next step',
     detailsLabel: 'The technical details',
@@ -475,6 +489,7 @@ npm ci && npm run dev`,
   },
   lab: {
     title: 'Training lab',
+    headline: 'Watch an AI learn to drive',
     intro:
       'How the Teacher AI learned to drive, from its first laps to the end of training. The Adaptive AI then learned to drive like it (step 3 of How it works).',
     simple: {

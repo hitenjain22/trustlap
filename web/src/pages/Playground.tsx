@@ -244,6 +244,7 @@ export default function Playground() {
   const [sheetOpen, setSheetOpen] = useState(false)
   const [sheetTab, setSheetTab] = useState<SheetTab>('weather')
   const [showForces, setShowForces] = useState(false)
+  const [gripTrail, setGripTrail] = useState(false)
   const [showKeys, setShowKeys] = useState(false)
   const [drawing, setDrawing] = useState(false)
   const [custom, setCustom] = useState(false) // a hand-drawn track or the puddle test's straight
@@ -439,10 +440,11 @@ export default function Playground() {
     setView({
       camera,
       showForces,
+      gripTrail,
       haloTau: calibration ? tau : null,
       labels: strings.playground.drivers,
     })
-  }, [setView, camera, showForces, calibration, tau, ready])
+  }, [setView, camera, showForces, gripTrail, calibration, tau, ready])
 
   // Puddle test: pause 1.5 s after the verdict so the chart and result stay on screen.
   const ph = puddleTest ? sim.telemetry?.history : undefined
@@ -768,6 +770,16 @@ export default function Playground() {
             />
             {strings.playground.showForces}
           </label>
+          <Tip text={strings.playground.gripTrailTip}>
+            <label className="chip">
+              <input
+                type="checkbox"
+                checked={gripTrail}
+                onChange={(e) => setGripTrail(e.currentTarget.checked)}
+              />
+              {strings.playground.gripTrail}
+            </label>
+          </Tip>
         </div>
         {puddleTest && (
           <PuddleTestPanel t={sim.telemetry} onRunAgain={runPuddleTest} onEnd={endPuddleTest} />

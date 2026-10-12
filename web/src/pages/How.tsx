@@ -5,6 +5,7 @@
  */
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
+import { PageHeader } from '../components/PageHeader.tsx'
 import { REPO_URL, strings } from '../copy/strings.ts'
 import {
   benchHeadline,
@@ -94,10 +95,7 @@ export default function How() {
 
   return (
     <div className="mx-auto max-w-[1080px] px-4 py-12 md:px-6 md:py-16">
-      <h1 className="text-[40px] leading-[1.08] font-bold [font-stretch:118%] md:text-[49px]">
-        {H.title}
-      </h1>
-      <p className="mt-3 max-w-[68ch] text-text-2">{H.lead}</p>
+      <PageHeader eyebrow={H.title} title={H.headline} intro={H.lead} />
 
       <ol className="mt-10 grid grid-cols-2 gap-2 sm:grid-cols-5" aria-label={H.title}>
         {STEPS.map((x, i) => (

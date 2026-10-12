@@ -12,6 +12,8 @@ export interface Palette {
   drvTeacher: string
   drvBlind: string
   drvScripted: string
+  teal: string // grip trail: estimate right
+  coral: string // grip trail: estimate wrong
   skid: string
 }
 
@@ -31,6 +33,8 @@ export function readPalette(): Palette {
     drvTeacher: v('--drv-teacher', '#9085e9'),
     drvBlind: v('--drv-blind', '#d55181'),
     drvScripted: v('--drv-scripted', '#8a949d'),
+    teal: v('--teal', '#38d1bd'),
+    coral: v('--coral', '#ff7d8c'),
     skid: '#0f1215',
   }
 }

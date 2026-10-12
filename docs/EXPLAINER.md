@@ -191,6 +191,16 @@ Five students trained from different random seeds. If their ẑ estimates (and t
 
 ---
 
+## The Playground's tools (M7, `web/src/pages/Playground.tsx`, `web/src/render/layers/overlays.ts`)
+
+- **Puddle test.** Loads the exact straight the evaluation uses (ported from Python and checked against its length and curvature), puts one puddle 200 m ahead, runs the student at half speed and scores it with the same rule as the evaluation (`state/puddleTest.ts` mirrors `notice_latencies`). It reports whatever happens; the published student doesn't notice.
+- **Crash toast.** The worker remembers, per car, the speed when things went wrong (leaving the track, or the start of a spin) and a few causes (puddle in the last 1.5 s, mid-corner, rain, governor on), so the page can say what happened in one sentence.
+- **Chase camera and tire forces.** Chase follows the focused car north-up with a critically damped spring, so it never jerks or rotates. The arrows come from a read-only buffer the physics writes each substep; nothing reads it back, so the parity tests still guard the physics.
+- **Draw a track.** Your stroke is simplified (Ramer–Douglas–Peucker), scaled to a legal length, splined and checked by the same validator as generated tracks. Auto-fix smooths it and re-fits the length each pass, because smoothing shrinks the loop.
+- **Phones.** Canvas first, a three-number telemetry strip, the conditions in a bottom sheet, 16 cars and fewer rain streaks.
+
+**Bugs this stage found.** The slow-device fallback silently swapped the track back to the original; a closed stroke that ended exactly on its start collapsed to NaN and was then *accepted* as valid (NaN comparisons are false); and the Lab briefly said "Not computed yet" while its data was still loading.
+
 ## 21 likely interview questions
 
 1. **Why PPO and not DQN?** Steering and throttle are continuous; DQN needs discrete actions. PPO is stable, simple, and works well with thousands of parallel environments.

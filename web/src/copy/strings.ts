@@ -406,6 +406,7 @@ npm ci && npm run dev`,
     intro: (tracks: number, seeds: number) =>
       `Every driver raced the same ${tracks} unseen test tracks under each condition, ${seeds} condition draws per track: ${tracks * seeds} laps per driver per condition. Ranges are 95% confidence intervals from a paired bootstrap over tracks.`,
     introMissing: 'The evaluation hasn’t been run for this build yet.',
+    figuresHeading: 'Figures',
     notComputed: 'Not computed yet.',
     showTable: 'Show table',
     showChart: 'Show chart',

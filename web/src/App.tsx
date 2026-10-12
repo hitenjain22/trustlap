@@ -80,7 +80,7 @@ export default function App() {
           aria-hidden="true"
         />
       </header>
-      <main id="main" className="flex-1">
+      <main id="main" className="min-h-[100svh] flex-1">
         <Outlet />
       </main>
       <footer className="border-t border-line px-4 py-10 text-sm text-text-2 md:px-6">

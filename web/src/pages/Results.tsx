@@ -346,6 +346,7 @@ export default function Results() {
       </div>
 
       <div className="mt-16 flex flex-col gap-16">
+        <h2 className="sr-only">{S.figuresHeading}</h2>
         <ChartFrame
           title={
             comp.length

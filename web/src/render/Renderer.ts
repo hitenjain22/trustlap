@@ -36,6 +36,8 @@ export interface RendererOptions {
   onSlow?: () => void
   /** Keep the track clear of overlaid UI: CSS px to leave free on the left (e.g. hero text). */
   fitInsetLeft?: () => number
+  /** Cap on rain streaks (default: the rain layer's 1,200). */
+  maxRainStreaks?: number
 }
 
 /** Shortest-arc angle interpolation. */
@@ -88,6 +90,7 @@ export class Renderer {
     this.canvas = canvas
     this.ctx = canvas.getContext('2d', { alpha: false })!
     this.opts = opts
+    if (opts.maxRainStreaks !== undefined) this.rainLayer.maxStreaks = opts.maxRainStreaks
   }
 
   /** Match the canvas to its CSS size × min(devicePixelRatio, 2) and rebuild cached layers. */
@@ -119,7 +122,7 @@ export class Renderer {
 
   /** Halve the rain for slow devices. */
   degrade(): void {
-    this.rainLayer.maxStreaks = 600
+    this.rainLayer.maxStreaks = Math.min(this.rainLayer.maxStreaks, 600)
   }
 
   private rebuildStatic(): void {

@@ -310,8 +310,14 @@ export default function Lab() {
       <div className="mt-12 flex flex-col gap-16">
         {checkpoints && checkpoints.length > 0 ? (
           <WatchItLearn checkpoints={checkpoints} />
+        ) : loaded ? (
+          <p className="text-text-3">{strings.results.notComputed}</p>
         ) : (
-          loaded && <p className="text-text-3">{strings.results.notComputed}</p>
+          // Same footprint as the section below, so nothing jumps when the checkpoints arrive.
+          <div className="grid gap-6 lg:grid-cols-[1fr_360px]" aria-hidden="true">
+            <div className="aspect-[4/3] w-full rounded-panel border border-line lg:aspect-[16/10]" />
+            <div className="min-h-[360px]" />
+          </div>
         )}
 
         <ChartFrame
@@ -333,6 +339,7 @@ export default function Lab() {
           }
           source={source}
           missing={!population}
+          loading={!loaded}
         >
           <LineChart
             series={fitnessSeries}
@@ -364,6 +371,7 @@ export default function Lab() {
           }
           source={source}
           missing={!lineage || !population}
+          loading={!loaded}
         >
           {lineage && population && (
             <FamilyTree lineage={lineage} population={population} winners={winners} />
@@ -388,6 +396,7 @@ export default function Lab() {
           }
           source={source}
           missing={!curriculum}
+          loading={!loaded}
         >
           <LineChart
             series={
@@ -418,7 +427,9 @@ export default function Lab() {
             {L.tuning.title}
           </h2>
           <p className="mt-1 max-w-[72ch] text-[14px] text-text-2">{L.tuning.subtitle}</p>
-          {population ? (
+          {!loaded ? (
+            <div className="mt-4 h-[240px]" aria-hidden="true" />
+          ) : population ? (
             <div className="mt-4 grid grid-cols-1 gap-8 md:grid-cols-2">
               <LineChart
                 series={hpSeries('lr')}

@@ -664,11 +664,17 @@ export default function Playground() {
           </div>
           <span className="label">{strings.playground.ghosts}</span>
           <div className="flex flex-wrap gap-2" role="group" aria-label={strings.playground.ghosts}>
-            {DRIVER_ORDER.filter((d) => d !== driver && available(d)).map((d) => (
-              <label key={d} className="chip">
+            {/* Every ghost is listed from the start (disabled until loaded) so the row doesn't jump. */}
+            {DRIVER_ORDER.filter((d) => d !== driver).map((d) => (
+              <label
+                key={d}
+                className={`chip ${available(d) ? '' : 'opacity-45'}`}
+                title={available(d) ? undefined : strings.playground.notTrainedYet}
+              >
                 <input
                   type="checkbox"
                   checked={ghosts.includes(d)}
+                  disabled={!available(d)}
                   onChange={() => toggleGhost(d)}
                 />
                 <span

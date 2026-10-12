@@ -121,7 +121,10 @@ export default function How() {
           ))}
         </dl>
         <p className="mt-6 text-text-2">
-          {H.card.resultsLead} <Link to="/results">{H.card.resultsLink}</Link>
+          {H.card.resultsLead}{' '}
+          <Link to="/results" className="text-sodium underline">
+            {H.card.resultsLink}
+          </Link>
         </p>
       </section>
 

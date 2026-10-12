@@ -48,6 +48,8 @@ export interface LiveSimOptions {
   seed?: number
   autoPuddles?: boolean
   fitInsetLeft?: () => number
+  /** Cap on rain streaks (phones use fewer; default 1,200). */
+  maxRainStreaks?: number
 }
 
 /** The focused car's live readings (Playground telemetry), sampled at 10 Hz. */
@@ -157,6 +159,7 @@ export function useLiveSim(opts: LiveSimOptions) {
       reducedMotion: reduced,
       showFocus: o.showFocus ?? false,
       fitInsetLeft: o.fitInsetLeft,
+      maxRainStreaks: o.maxRainStreaks,
       onSlow: () => {
         // Halve the work on slow devices (SPEC 10.3) by restarting with half the cars.
         // Keeps whatever track is showing (a new, drawn or puddle-test track included).

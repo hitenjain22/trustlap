@@ -17,6 +17,10 @@ import type { Metrics } from '../data/schemas.ts'
 import { useLiveSim } from '../hooks/useLiveSim.ts'
 
 const HERO_CARS = 48
+// Phone budget (SPEC 10.2 mobile, 13): 16 cars and at most 400 rain streaks.
+const PHONE_CARS = 16
+const PHONE_RAIN_STREAKS = 400
+const isPhone = () => window.matchMedia('(max-width: 767px)').matches
 const INITIAL_RAIN = 0.4
 /** Story steps that are live on the site (0-based). */
 const BUILT_STEPS = [0, 1, 2, 3, 4]
@@ -37,8 +41,10 @@ export default function Home() {
       }),
     [],
   )
+  const [phone] = useState(isPhone) // decided once: the sim is sized at start-up
   const sim = useLiveSim({
-    nCars: HERO_CARS,
+    nCars: phone ? PHONE_CARS : HERO_CARS,
+    maxRainStreaks: phone ? PHONE_RAIN_STREAKS : undefined,
     trackSeed: firstSeed,
     conditions: { rain: INITIAL_RAIN },
     autoPuddles: true,

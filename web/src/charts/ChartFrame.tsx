@@ -46,6 +46,7 @@ export function ChartFrame({
   table,
   source,
   missing,
+  loading,
   children,
 }: {
   title: string
@@ -55,6 +56,8 @@ export function ChartFrame({
   table?: TableData | null
   source: string
   missing?: boolean
+  /** Data still loading: hold the chart's space (no "Not computed yet" flash, no layout shift). */
+  loading?: boolean
   children: ReactNode
 }) {
   const [showTable, setShowTable] = useState(false)
@@ -65,7 +68,9 @@ export function ChartFrame({
         {title}
       </h3>
       <p className="mt-1 max-w-[72ch] text-[14px] text-text-2">{subtitle}</p>
-      {missing ? (
+      {loading ? (
+        <div className="mt-4 h-[340px] rounded-panel bg-asphalt-800/40" aria-hidden="true" />
+      ) : missing ? (
         <p className="mt-6 rounded-panel border border-dashed border-line px-4 py-8 text-center text-text-3">
           {strings.results.notComputed}
         </p>

@@ -488,3 +488,29 @@ details[open] > summary::after {
   background-clip: text;
   color: transparent;
 }
+
+/* Race: the countdown numerals pop in, and the nav link carries the teal accent. */
+.countdown {
+  animation: countdown-pop 700ms var(--ease) both;
+  text-shadow: 0 0 40px rgb(56 209 189 / 0.6);
+}
+@keyframes countdown-pop {
+  from {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0.15;
+    transform: scale(0.9);
+  }
+}
+.navlink--race {
+  color: var(--teal);
+}
+.navlink--race.active::after {
+  background: linear-gradient(90deg, var(--teal), var(--sky));
+}

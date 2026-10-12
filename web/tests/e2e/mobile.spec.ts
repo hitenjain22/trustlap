@@ -14,7 +14,7 @@ test('phone: no page scrolls sideways', async ({ page }) => {
 test('phone: the menu links every page and the conditions sheet has tabs', async ({ page }) => {
   await page.goto('/playground')
   await page.getByRole('button', { name: 'Menu' }).click()
-  await expect(page.locator('#mobile-nav').getByRole('link')).toHaveCount(4)
+  await expect(page.locator('#mobile-nav').getByRole('link')).toHaveCount(5)
   await page.getByRole('button', { name: 'Menu' }).click()
   await page.getByRole('button', { name: 'Conditions' }).click()
   await page.getByRole('tab', { name: 'More conditions' }).click()

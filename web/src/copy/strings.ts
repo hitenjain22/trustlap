@@ -20,6 +20,10 @@ const DRIVERS = {
     name: 'Rule-based driver',
     what: 'Hand-written rules, given the exact grip. A reference, not AI.',
   },
+  human: {
+    name: 'You',
+    what: 'Your car, driven with the arrow keys or the on-screen buttons.',
+  },
 } as const
 
 /** Evaluation conditions in plain words (metrics.json suite ids). */
@@ -49,10 +53,12 @@ export const strings = {
     '/lab': 'Training lab',
     '/results': 'Results',
     '/how-it-works': 'How it works',
+    '/race': 'Race the AI',
   },
   nav: {
     playground: 'Playground',
     lab: 'Training lab',
+    race: 'Race the AI',
     results: 'Results',
     how: 'How it works',
     github: 'Source code on GitHub',
@@ -138,6 +144,7 @@ export const strings = {
       student: DRIVERS.student.name,
       blind: DRIVERS.blind.name,
       teacher: DRIVERS.teacher.name,
+      human: DRIVERS.human.name,
     },
     ghosts: 'Race against',
     notTrainedYet: 'Not trained yet',
@@ -199,6 +206,52 @@ export const strings = {
     dismiss: 'Dismiss',
     drawnTrack: 'Your drawn track',
     drawnNoLink: 'Drawn tracks can’t be shared by link yet. The link keeps everything else.',
+  },
+  race: {
+    eyebrow: 'Race',
+    title: 'Can you beat the AI?',
+    intro:
+      'Drive one lap against the Adaptive AI: the same track, the same weather, the same start. Its car is the amber ghost; yours is teal.',
+    weatherLabel: 'Weather',
+    weather: {
+      dry: { name: 'Dry', note: 'Full grip: the easy case for everyone.' },
+      rain: {
+        name: 'Rain',
+        note: 'Rain and puddles: the conditions the Adaptive AI was built for.',
+      },
+      ice: {
+        name: 'Black ice',
+        note: 'Far less grip than the AI ever practised on. Fair warning: it struggles here too.',
+      },
+    } as Record<'dry' | 'rain' | 'ice', { name: string; note: string }>,
+    canvasLabel: 'Your car (teal) racing the Adaptive AI (amber ghost) on the selected track.',
+    ready: 'Ready when you are',
+    keys: 'Steer with ← → (or A / D). Throttle ↑ (W), brake ↓ (S).',
+    keysTouch: 'Steer with ◀ ▶, gas ▲ and brake ■ at the bottom of the screen.',
+    start: 'Start the race',
+    go: 'Go',
+    hud: {
+      speed: 'Speed',
+      yourLap: 'Your lap',
+      aiRacing: 'still racing',
+      aiDone: (t: string) => `finished ${t}`,
+    },
+    youWin: 'You beat the AI',
+    aiWins: 'The AI wins',
+    winBy: (s: string) => `You finished ${s} s ahead of the Adaptive AI.`,
+    winAiStillRacing: 'You finished the lap before the Adaptive AI did.',
+    loseBy: (s: string) => `The Adaptive AI finished ${s} s ahead of you.`,
+    crashes: (n: number) => (n === 1 ? '1 crash' : `${n} crashes`),
+    again: 'Race again',
+    share: 'Share result',
+    copied: 'Copied',
+    shareWin: (s: string | null, w: string) =>
+      s
+        ? `I beat the AI by ${s} s on ${w} on TrustLap. Can you?`
+        : `I beat the AI on ${w} on TrustLap. Can you?`,
+    shareLose: (s: string, w: string) =>
+      `The AI beat me by ${s} s on ${w} on TrustLap. Can you do better?`,
+    pads: { left: 'Steer left', right: 'Steer right', brake: 'Brake', gas: 'Throttle' },
   },
   puddleTest: {
     track: 'Puddle test straight',

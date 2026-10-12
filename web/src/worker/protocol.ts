@@ -5,6 +5,7 @@
  * snapshot after every tick. Layout: HEADER floats, then STRIDE floats per car.
  */
 import type { SimConfig } from '../sim/config.ts'
+import type { RiskCalibration } from '../sim/risk.ts'
 
 export const HEADER = 4 // [simTimeS, stepIndex, leaderLap (1-based), crashesTotal]
 export const STRIDE = 24 // per car, see CarField
@@ -52,7 +53,7 @@ export const CrashCause = {
 export const PUDDLE_TEST = { puddleSM: 200, mult: 0.4, radiusM: 8, startSpeedMps: 20 } as const
 
 /** Driver identities (SPEC 11.3). Order matters: it's the snapshot's Driver index. */
-export const DRIVER_KINDS = ['scripted', 'blind', 'teacher', 'student'] as const
+export const DRIVER_KINDS = ['scripted', 'blind', 'teacher', 'student', 'human'] as const
 export type DriverKind = (typeof DRIVER_KINDS)[number]
 /** Which trained drivers a build ships, from the artifact manifest's file list. */
 export function availableDrivers(files: string[]): DriverKind[] {
@@ -112,10 +113,12 @@ export interface SimInit {
   /** Students available (from the manifest) and how many to run (1 = light mode, no uncertainty). */
   studentMembers: number
   ensembleMembers?: number
-  /** Isotonic table u → P(crash in 2 s), if computed (calibration.json). */
-  calibration?: { u: number[]; p: number[] }
+  /** Crash-risk model or the older disagreement table (calibration.json), if computed. */
+  calibration?: RiskCalibration
   /** Training Lab: use this checkpoint (checkpoints/<name>) as the teacher network. */
   checkpoint?: string
+  /** Race page: a crash costs time (respawn 30 m back) but doesn't restart the lap. */
+  race?: boolean
 }
 
 /** Track geometry the renderer needs (float32, interleaved xy). */
@@ -147,6 +150,8 @@ export interface SimApi {
   setCarCount(nCars: number): Promise<void>
   setConditions(values: Partial<ConditionValues>): Promise<number> // returns active puddles
   setDrivers(driver: DriverKind, ghosts: DriverKind[]): Promise<void>
+  /** The visitor's own car ("human" driver): steering and throttle/brake in [−1, 1]. */
+  setHumanInput(steer: number, long: number): Promise<void>
   /** Training Lab: drive the "teacher" cars with a timeline checkpoint (checkpoints/<name>). */
   setCheckpoint(name: string): Promise<void>
   /** Safety governor for student cars (SPEC 7.7): ease off above crash risk τ. */

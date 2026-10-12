@@ -60,6 +60,108 @@ def governed_action(action: jax.Array, p_crash: jax.Array, tau: float) -> jax.Ar
 
 
 # ---------------------------------------------------------------------------------------------
+# Crash-risk model: a few physically meaningful features, a logistic score, isotonic calibration
+# ---------------------------------------------------------------------------------------------
+
+RISK_FEATURES = ("disagreement", "speed_mps", "curvature_ahead_inv_m", "grip_demand")
+
+
+class RiskModel(NamedTuple):
+    """p(crash within 2 s) = isotonic(sigmoid(w · (f − mean) / std + b)). Arrays are numpy on the
+    host and are passed into jitted code as arguments (never closed over)."""
+
+    mean: Any  # [F]
+    std: Any  # [F]
+    w: Any  # [F]
+    b: Any  # []
+    table_s: Any  # [K] isotonic knots over the logistic score
+    table_p: Any  # [K]
+
+
+def risk_features(state: Any, bank: Any, uncertainty: Any, mu_hat_rear: Any, xp: Any = jnp) -> Any:
+    """[F] features for one car: ensemble disagreement, speed (m/s), the sharpest curvature (1/m)
+    within the next `risk_lookahead_points` centerline points, and grip demand = the lateral
+    acceleration that curve needs at this speed over the grip the car feels it has (v²κ / μ̂g)."""
+    ens = CONFIG.ensemble
+    car = state.car
+    speed = xp.sqrt(car.vx_mps**2 + car.vy_mps**2)
+    n = bank.n_points[state.track_id]
+    ids = (state.idx + xp.arange(ens.risk_lookahead_points)) % n
+    kappa = xp.max(xp.abs(bank.curvature[state.track_id, ids]))
+    demand = (
+        speed**2 * kappa / (xp.maximum(mu_hat_rear, ens.risk_min_grip) * CONFIG.car.gravity_mps2)
+    )
+    return xp.stack([uncertainty, speed, kappa, demand])
+
+
+def risk_predict(model: RiskModel, f: Any, xp: Any = jnp) -> Any:
+    """Calibrated crash probability for features f ([F] or [N, F])."""
+    z = (f - model.mean) / model.std
+    score = 1.0 / (1.0 + xp.exp(-(z @ model.w + model.b)))
+    return xp.interp(score, model.table_s, model.table_p)
+
+
+def fit_risk(x: np.ndarray, y: np.ndarray, l2: float = 1e-3, iters: int = 25) -> RiskModel:
+    """Logistic regression (Newton / IRLS with a small L2 penalty) on standardized features,
+    then isotonic regression of y on the logistic score so probabilities are calibrated."""
+    x = x.astype(np.float64)
+    mean = x.mean(axis=0)
+    std = np.maximum(x.std(axis=0), 1e-6)
+    z = np.hstack([(x - mean) / std, np.ones((len(x), 1))])
+    beta = np.zeros(z.shape[1])
+    reg = l2 * np.eye(z.shape[1])
+    reg[-1, -1] = 0.0  # no penalty on the bias
+    for _ in range(iters):
+        p = 1.0 / (1.0 + np.exp(-(z @ beta)))
+        grad = z.T @ (p - y) + reg @ beta
+        hess = (z * (p * (1 - p))[:, None]).T @ z + reg
+        step = np.linalg.solve(hess, grad)
+        beta -= step
+        if np.max(np.abs(step)) < 1e-8:
+            break
+    score = 1.0 / (1.0 + np.exp(-(z @ beta)))
+    table_s, table_p = isotonic_fit(score, y)
+    return RiskModel(
+        mean=mean.astype(np.float32),
+        std=std.astype(np.float32),
+        w=beta[:-1].astype(np.float32),
+        b=np.float32(beta[-1]),
+        table_s=table_s.astype(np.float32),
+        table_p=table_p.astype(np.float32),
+    )
+
+
+def disagreement_only(x: np.ndarray, y: np.ndarray) -> RiskModel:
+    """The earlier model, for comparison: isotonic on disagreement alone (feature 0)."""
+    tu, tp = isotonic_fit(x[:, 0], y)
+    f = x.shape[1]
+    w = np.zeros(f, np.float32)
+    # score = sigmoid(u) is monotone in u, so the table over sigmoid(u) is the same model.
+    w[0] = 1.0
+    return RiskModel(
+        mean=np.zeros(f, np.float32),
+        std=np.ones(f, np.float32),
+        w=w,
+        b=np.float32(0.0),
+        table_s=(1.0 / (1.0 + np.exp(-tu))).astype(np.float32),
+        table_p=tp.astype(np.float32),
+    )
+
+
+def risk_to_dict(model: RiskModel) -> dict[str, Any]:
+    """JSON-ready model (calibration.json / metrics.json)."""
+    return {
+        "features": list(RISK_FEATURES),
+        "mean": [float(v) for v in model.mean],
+        "std": [float(v) for v in model.std],
+        "w": [float(v) for v in model.w],
+        "b": float(model.b),
+        "table_s": [float(v) for v in model.table_s],
+        "table_p": [float(v) for v in model.table_p],
+    }
+
+
+# ---------------------------------------------------------------------------------------------
 # Isotonic calibration (pool adjacent violators), numpy only
 # ---------------------------------------------------------------------------------------------
 

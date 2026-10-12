@@ -97,11 +97,24 @@ export type Manifest = z.infer<typeof manifestSchema>
 export const loadManifest = (): Promise<Manifest> =>
   fetchJson('manifest.json', (raw) => manifestSchema.parse(raw))
 
-export const calibrationSchema = z.object({
-  u: z.array(z.number()).min(2),
-  p: z.array(z.number().min(0).max(1)).min(2),
-  tau_default: z.number(),
+const riskModelSchema = z.object({
+  features: z.array(z.string()),
+  mean: z.array(z.number()),
+  std: z.array(z.number()),
+  w: z.array(z.number()),
+  b: z.number(),
+  table_s: z.array(z.number()).min(2),
+  table_p: z.array(z.number().min(0).max(1)).min(2),
 })
+/** Either the logistic + isotonic risk model, or the earlier disagreement-only table. */
+export const calibrationSchema = z.union([
+  z.object({ model: riskModelSchema, tau_default: z.number() }),
+  z.object({
+    u: z.array(z.number()).min(2),
+    p: z.array(z.number().min(0).max(1)).min(2),
+    tau_default: z.number(),
+  }),
+])
 export type Calibration = z.infer<typeof calibrationSchema>
 /** The crash-risk table if this build has one (M6), else null: absence is not an error. */
 export async function loadCalibration(): Promise<Calibration | null> {

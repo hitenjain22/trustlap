@@ -8,6 +8,7 @@ const Playground = lazy(() => import('./pages/Playground.tsx'))
 const Results = lazy(() => import('./pages/Results.tsx'))
 const Lab = lazy(() => import('./pages/Lab.tsx'))
 const How = lazy(() => import('./pages/How.tsx'))
+const Race = lazy(() => import('./pages/Race.tsx'))
 
 export const router = createBrowserRouter([
   {
@@ -44,6 +45,14 @@ export const router = createBrowserRouter([
         element: (
           <Suspense fallback={null}>
             <Playground />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'race',
+        element: (
+          <Suspense fallback={null}>
+            <Race />
           </Suspense>
         ),
       },

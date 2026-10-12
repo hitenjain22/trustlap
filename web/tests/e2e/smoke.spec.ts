@@ -177,3 +177,27 @@ test('playground: hovering or focusing a driver explains it', async ({ page }) =
   ).toBeVisible()
   await expect(teacher).toHaveAccessibleDescription(/told the true conditions/)
 })
+
+test('race: countdown, then your car drives and the lap clock keeps running through a crash', async ({
+  page,
+}) => {
+  test.setTimeout(60_000)
+  await page.goto('/race')
+  await page.getByRole('button', { name: 'Start the race' }).click({ timeout: 20_000 })
+  await expect(page.locator('.countdown')).toBeVisible()
+  await page.keyboard.down('ArrowUp') // full throttle, no steering: it will leave the track
+  const lap = page.locator('.card', { hasText: 'Your lap' }).locator('.numeral')
+  await expect(lap).toBeVisible({ timeout: 10_000 })
+  const secs = async () => {
+    const [m, s] = (await lap.innerText()).split(':')
+    return Number(m) * 60 + Number(s)
+  }
+  let prev = await secs()
+  for (let i = 0; i < 8; i++) {
+    await page.waitForTimeout(600)
+    const now = await secs()
+    expect(now).toBeGreaterThanOrEqual(prev)
+    prev = now
+  }
+  expect(prev).toBeGreaterThan(3)
+})

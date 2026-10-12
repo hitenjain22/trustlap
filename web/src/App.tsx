@@ -45,6 +45,9 @@ export default function App() {
       <NavLink to="/how-it-works" className="navlink">
         {strings.nav.how}
       </NavLink>
+      <NavLink to="/race" className="navlink navlink--race">
+        {strings.nav.race}
+      </NavLink>
     </>
   )
   return (

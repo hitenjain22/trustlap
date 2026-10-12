@@ -155,6 +155,10 @@ export const simConfigSchema = z.object({
     max_speed_mps: num,
   }),
   web: z.object({ hero_cars: int, playground_cars_max: int, lab_cars: int, mobile_cars_max: int }),
+  // Risk-feature constants arrived with the logistic risk model; older exports don't have them.
+  ensemble: z
+    .object({ risk_lookahead_points: int.optional(), risk_min_grip: num.optional() })
+    .optional(),
   obs_layout: z.object({
     policy: z.array(z.string()),
     privileged: z.array(z.string()),

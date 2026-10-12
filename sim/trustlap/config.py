@@ -323,6 +323,10 @@ class EnsembleConfig:
     members: int = 5
     crash_horizon_s: float = 2.0
     governor_taus: tuple[float, ...] = (0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5)
+    # Crash-risk features (confidence.risk_features): the sharpest curve within this many
+    # centerline points ahead (~40 m at 2 m spacing), and a floor on the felt grip.
+    risk_lookahead_points: int = 20
+    risk_min_grip: float = 0.1
 
 
 @dataclass(frozen=True)

@@ -20,6 +20,7 @@ const MIN_CAR_PX = 13
 
 /** Dash patterns per driver (SPEC 11.3), in CSS px. */
 export const DRIVER_DASH: Record<DriverKind, number[]> = {
+  human: [],
   student: [],
   teacher: [2, 4],
   blind: [6, 4],
@@ -47,6 +48,7 @@ export function driverColor(kind: DriverKind, pal: Palette): string {
     teacher: pal.drvTeacher,
     blind: pal.drvBlind,
     scripted: pal.drvScripted,
+    human: pal.human,
   }[kind]
 }
 
@@ -172,7 +174,7 @@ function drawGroup(
   ctx.fill()
 }
 
-const KINDS: DriverKind[] = ['scripted', 'blind', 'teacher', 'student']
+const KINDS: DriverKind[] = ['scripted', 'blind', 'teacher', 'student', 'human']
 
 /** Ghosts first (underneath), then main cars by driver, then the focus outline on top. */
 export function drawCars(

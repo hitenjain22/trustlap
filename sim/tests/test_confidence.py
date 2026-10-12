@@ -52,3 +52,28 @@ def test_governor_caps_then_brakes() -> None:
     np.testing.assert_allclose(
         governed_action(a, jnp.float32(0.5), 0.2), [0.2, -0.4], atol=1e-6
     )  # brake
+
+
+def test_risk_model_uses_its_features_and_stays_calibrated() -> None:
+    """When crashes depend on grip demand, the feature model ranks risk far better than
+    disagreement alone, and its probabilities stay calibrated."""
+    from trustlap.confidence import disagreement_only, fit_risk, reliability, risk_predict
+
+    rng = np.random.default_rng(0)
+    n = 20_000
+    x = np.stack(
+        [
+            rng.uniform(0, 0.3, n),
+            rng.uniform(0, 60, n),
+            rng.uniform(0, 0.05, n),
+            rng.uniform(0, 2, n),
+        ],
+        axis=1,
+    )
+    y = (rng.uniform(size=n) < 1 / (1 + np.exp(-(-5 + 4 * x[:, 3])))).astype(float)
+    model = fit_risk(x, y)
+    base = disagreement_only(x, y)
+    rel = reliability(np.asarray(risk_predict(model, x, np)), y)
+    rel_base = reliability(np.asarray(risk_predict(base, x, np)), y)
+    assert rel["auroc"] > 0.8 > rel_base["auroc"] + 0.2
+    assert rel["ece"] < 0.02

@@ -17,6 +17,7 @@ import json
 import math
 import shutil
 import subprocess
+import types
 from pathlib import Path
 from typing import Any
 
@@ -610,7 +611,12 @@ def export_metrics(
     metrics["git_sha"] = _git_sha()
     _write_json(out_dir / "metrics.json", metrics)
     cal = metrics["calibration"]
-    table = {"u": cal["table"]["u"], "p": cal["table"]["p"], "tau_default": cal["tau_default"]}
+    # The browser's crash-risk model: the logistic + isotonic model when the evaluation fitted one,
+    # else the earlier disagreement-only table.
+    if "model" in cal:
+        table = {"model": cal["model"], "tau_default": cal["tau_default"]}
+    else:
+        table = {"u": cal["table"]["u"], "p": cal["table"]["p"], "tau_default": cal["tau_default"]}
     _write_json(out_dir / "calibration.json", table)
     update_readme(metrics)
     update_resume(metrics)
@@ -942,6 +948,47 @@ def export_policy_golden(
             print(f"golden → {p.relative_to(REPO)} ({p.stat().st_size / 1024:.0f} KB)")
 
 
+def golden_risk(bank: TrackBank, n: int = 64, seed: int = 7) -> dict[str, Any]:
+    """Crash-risk parity: a model fit on synthetic data, its probabilities for random features,
+    and the features computed from car states on the golden tracks."""
+    from trustlap.confidence import fit_risk, risk_features, risk_predict, risk_to_dict
+
+    rng = np.random.default_rng(seed)
+    m = 4000
+    x = np.stack(
+        [
+            rng.uniform(0, 0.3, m),
+            rng.uniform(0, 60, m),
+            rng.uniform(0, 0.05, m),
+            rng.uniform(0, 2.0, m),
+        ],
+        axis=1,
+    )
+    logit = -4 + 6 * x[:, 0] + 0.02 * x[:, 1] + 2.5 * x[:, 3]
+    y = (rng.uniform(size=m) < 1 / (1 + np.exp(-logit))).astype(float)
+    model = fit_risk(x, y)
+    feats = x[:n]
+    probs = np.asarray(risk_predict(model, feats.astype(np.float32), np))
+    # Features from states: random track, centerline index, velocity, disagreement and felt grip.
+    states = []
+    for _ in range(n):
+        t = int(rng.integers(len(bank.seeds)))
+        idx = int(rng.integers(int(bank.n_points[t])))
+        vx, vy = float(rng.uniform(0, 60)), float(rng.uniform(-3, 3))
+        u, mu = float(rng.uniform(0, 0.3)), float(rng.uniform(0.05, 1.2))
+        car = types.SimpleNamespace(vx_mps=np.float32(vx), vy_mps=np.float32(vy))
+        st = types.SimpleNamespace(car=car, track_id=t, idx=idx)
+        f = risk_features(st, bank, np.float32(u), np.float32(mu), np)
+        states.append(
+            {"track": t, "idx": idx, "vx": vx, "vy": vy, "u": u, "mu": mu, "f": f.tolist()}
+        )
+    return {
+        "model": risk_to_dict(model),
+        "cases": [{"f": f.tolist(), "p": float(p)} for f, p in zip(feats, probs, strict=True)],
+        "states": states,
+    }
+
+
 def export_golden(out_dir: Path = GOLDEN) -> None:
     """Write every parity fixture."""
     jax.config.update("jax_default_matmul_precision", "highest")
@@ -967,6 +1014,10 @@ def export_golden(out_dir: Path = GOLDEN) -> None:
     _write_json(
         out_dir / "scripted_closed_loop.json",
         {**meta, "track_seeds": list(GOLDEN_TRACK_SEEDS), **closed},
+    )
+    _write_json(
+        out_dir / "risk.json",
+        {**meta, "track_seeds": list(GOLDEN_TRACK_SEEDS), **golden_risk(bank)},
     )
     for p in sorted(out_dir.glob("*.json")):
         print(f"golden → {p.relative_to(REPO)} ({p.stat().st_size / 1024:.0f} KB)")

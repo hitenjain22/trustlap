@@ -29,7 +29,18 @@ import jax.numpy as jnp
 import numpy as np
 
 from trustlap.conditions import OOD_SUITES, SUITES, Conditions, nominal_conditions, suite_conditions
-from trustlap.confidence import ensemble_act, governed_action, isotonic_fit, reliability
+from trustlap.confidence import (
+    RISK_FEATURES,
+    RiskModel,
+    disagreement_only,
+    ensemble_act,
+    fit_risk,
+    governed_action,
+    reliability,
+    risk_features,
+    risk_predict,
+    risk_to_dict,
+)
 from trustlap.config import CONFIG
 from trustlap.env import Env, EnvState, Observation, core_step, observe
 from trustlap.networks import ActorCritic
@@ -46,6 +57,16 @@ ActFn = Callable[..., tuple[jax.Array, jax.Array, jax.Array]]
 DRIVERS = ("scripted", "blind", "student", "student_governed", "teacher")
 CRASH_HORIZON_STEPS = int(round(CONFIG.ensemble.crash_horizon_s / CONFIG.time.control_dt_s))
 NAN2 = jnp.full(2, jnp.nan)
+NAN_F = jnp.full(len(RISK_FEATURES), jnp.nan)
+# Placeholder risk model for drivers that never use one (any shape-correct values will do).
+NO_RISK = RiskModel(
+    mean=np.zeros(len(RISK_FEATURES), np.float32),
+    std=np.ones(len(RISK_FEATURES), np.float32),
+    w=np.zeros(len(RISK_FEATURES), np.float32),
+    b=np.float32(0.0),
+    table_s=np.array([0.0, 1.0], np.float32),
+    table_p=np.array([0.0, 0.0], np.float32),
+)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -64,11 +85,10 @@ def _policy(path: Path) -> ActFn:
         state: EnvState,
         obs: Observation,
         bank: TrackBank,
-        cu: jax.Array,
-        cp: jax.Array,
+        risk: RiskModel,
         tau: jax.Array,
     ) -> Any:
-        return policy_action(net, params, o, p, obs), jnp.nan, NAN2
+        return policy_action(net, params, o, p, obs), NAN_F, NAN2
 
     return act
 
@@ -78,11 +98,10 @@ def _scripted() -> ActFn:
         state: EnvState,
         obs: Observation,
         bank: TrackBank,
-        cu: jax.Array,
-        cp: jax.Array,
+        risk: RiskModel,
         tau: jax.Array,
     ) -> Any:
-        return scripted_action(state, bank, CONFIG, jnp), jnp.nan, NAN2
+        return scripted_action(state, bank, CONFIG, jnp), NAN_F, NAN2
 
     return act
 
@@ -95,13 +114,13 @@ def _student(teacher_path: Path, students_path: Path) -> ActFn:
         state: EnvState,
         obs: Observation,
         bank: TrackBank,
-        cu: jax.Array,
-        cp: jax.Array,
+        risk: RiskModel,
         tau: jax.Array,
     ) -> Any:
         out = ensemble_act(teacher, params, obs)
-        action = governed_action(out.action, jnp.interp(out.uncertainty, cu, cp), tau)
-        return action, out.uncertainty, out.grip_mean
+        f = risk_features(state, bank, out.uncertainty, out.grip_mean[1])
+        action = governed_action(out.action, risk_predict(risk, f), tau)
+        return action, f, out.grip_mean
 
     return act
 
@@ -120,7 +139,7 @@ class Laps:
     lap_time_s: np.ndarray  # NaN unless completed
     mean_speed: np.ndarray
     grip_mae: np.ndarray  # NaN for drivers without a grip estimate
-    u: np.ndarray | None = None  # [T, N] per-step uncertainty (students, if recorded)
+    u: np.ndarray | None = None  # [T, N, F] per-step risk features (students, if recorded)
     end_step: np.ndarray | None = None
 
 
@@ -133,7 +152,7 @@ def run(
     track_ids: np.ndarray,
     conds: Conditions,
     act: ActFn,
-    calib: tuple[np.ndarray, np.ndarray] | None = None,
+    calib: RiskModel | None = None,
     record_u: bool = False,
     seed: int = 0,
     tau: float = float("inf"),
@@ -141,9 +160,7 @@ def run(
     """One lap per car from the start line; stops early once every car has finished."""
     n = len(track_ids)
     bank = env.bank
-    cu, cp = (
-        (jnp.asarray(calib[0]), jnp.asarray(calib[1])) if calib else (jnp.zeros(2), jnp.zeros(2))
-    )
+    risk = jax.tree.map(jnp.asarray, calib if calib is not None else NO_RISK)
     tau_j = jnp.float32(tau)
     key = jax.random.key(seed)
     state, obs = env.eval_reset(jax.random.split(key, n), jnp.asarray(track_ids, jnp.int32), conds)
@@ -156,14 +173,13 @@ def run(
         def chunk(
             carry: tuple,
             keys: jax.Array,
-            cu: jax.Array,
-            cp: jax.Array,
+            risk: RiskModel,
             tau_j: jax.Array,
             bank: TrackBank,  # an argument, never a closure: one cache entry serves every bank
         ) -> tuple:
             def one(st: EnvState, ob: Observation, done: jax.Array, k: jax.Array) -> Any:
                 k_gust, k_obs = jax.random.split(k)
-                action, u, grip = act(st, ob, bank, cu, cp, tau_j)
+                action, u, grip = act(st, ob, bank, risk, tau_j)
                 new, _, info = core_step(
                     st, action, jax.random.normal(k_gust, (2,)), bank, CONFIG, jnp
                 )
@@ -201,7 +217,7 @@ def run(
                 gerr_sum = gerr_sum + jnp.where(live, gerr, 0.0)
                 done = done | ending
                 return (st2, ob2, done, outcome, end, speed_sum, gerr_sum), jnp.where(
-                    live, u, jnp.nan
+                    live[:, None], u, jnp.nan
                 )
 
             return jax.lax.scan(body, carry, keys)
@@ -215,7 +231,7 @@ def run(
     key = jax.random.fold_in(key, 1)
     while steps < CONFIG.episode.max_steps:
         key, k = jax.random.split(key)
-        carry, u = chunk(carry, jax.random.split(k, _CHUNK), cu, cp, tau_j, bank)
+        carry, u = chunk(carry, jax.random.split(k, _CHUNK), risk, tau_j, bank)
         if record_u:
             us.append(np.asarray(u))
         steps += _CHUNK
@@ -291,12 +307,13 @@ def ratio_bootstrap(
 
 
 def crash_labels(laps: Laps, horizon: int = CRASH_HORIZON_STEPS) -> tuple[np.ndarray, np.ndarray]:
-    """(u_t, y_t) pairs over all live steps: y = 1 if the car crashes within the next 2 s."""
+    """(features_t [M, F], y_t [M]) over all live steps: y = 1 if the car crashes within the
+    next 2 s."""
     assert laps.u is not None and laps.end_step is not None
     t = np.arange(laps.u.shape[0])[:, None]
     crash_at = np.where(laps.crashed, laps.end_step, np.iinfo(np.int32).max)[None, :]
     y = ((crash_at - (t + 1)) < horizon) & ((t + 1) <= crash_at)
-    live = np.isfinite(laps.u)
+    live = np.all(np.isfinite(laps.u), axis=-1)
     return laps.u[live], y[live].astype(float)
 
 
@@ -391,7 +408,7 @@ def puddle_step(
     bank_j = env.bank
     c = nominal_conditions(CONFIG, jnp)
     p = CONFIG.conditions.puddle_slots
-    zero2 = jnp.zeros(2)
+    no_risk = jax.tree.map(jnp.asarray, NO_RISK)
 
     @jax.jit
     def roll(state: EnvState, obs: Observation) -> tuple[jax.Array, jax.Array]:
@@ -399,7 +416,7 @@ def puddle_step(
             st, ob = c
 
             def one(s: EnvState, o: Observation) -> Any:
-                a, _, grip = act(s, o, bank_j, zero2, zero2, jnp.float32(jnp.inf))
+                a, _, grip = act(s, o, bank_j, no_risk, jnp.float32(jnp.inf))
                 new, _, info = core_step(s, a, jnp.zeros(2), bank_j, CONFIG, jnp)
                 no, sensed = observe(
                     new, bank_j, jnp.zeros(CONFIG.obs.policy_size - 1), CONFIG, jnp
@@ -503,9 +520,9 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
         u_all.append(u)
         y_all.append(y)
     u_val, y_val = np.concatenate(u_all), np.concatenate(y_all)
-    table_u, table_p = isotonic_fit(u_val, y_val)
-    calib = (table_u, table_p)
-    log(f"calibration fit on {len(u_val):,} validation steps ({y_val.mean():.3%} positive)")
+    calib = fit_risk(u_val, y_val)
+    baseline_model = disagreement_only(u_val, y_val)
+    log(f"risk model fit on {len(u_val):,} validation steps ({y_val.mean():.3%} positive)")
 
     taus = list(CONFIG.ensemble.governor_taus)
     tids, conds = suite_batch(val, "combined", 2, val_tracks, args.seed + 2)
@@ -622,11 +639,14 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
         u_t.append(u)
         y_t.append(y)
     u_test, y_test = np.concatenate(u_t), np.concatenate(y_t)
-    p_test = np.interp(u_test, table_u, table_p)
+    p_test = np.asarray(risk_predict(calib, u_test, np))
     rel = reliability(p_test, y_test)
     order = np.argsort(p_test, kind="stable")
     for b_, chunk in zip(rel["bins"], np.array_split(order, len(rel["bins"])), strict=True):
-        b_["u_mean"] = float(np.mean(u_test[chunk]))
+        b_["u_mean"] = float(np.mean(u_test[chunk, 0]))
+    # The earlier disagreement-only model, scored on the same test steps, for comparison.
+    rel_base = reliability(np.asarray(risk_predict(baseline_model, u_test, np)), y_test)
+    log(f"risk AUROC {rel['auroc']:.3f} (disagreement only: {rel_base['auroc']:.3f})")
 
     # 5. Governor sweep on the test bank (combined suite).
     tids, conds = suite_batch(test, "combined", args.seeds, test_tracks, args.seed + 10)
@@ -685,7 +705,13 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
         "paired_deltas": paired,
         "calibration": {
             **rel,
-            "table": {"u": table_u.tolist(), "p": table_p.tolist()},
+            "model": risk_to_dict(calib),
+            "baseline": {
+                "name": "disagreement only",
+                "ece": rel_base["ece"],
+                "brier": rel_base["brier"],
+                "auroc": rel_base["auroc"],
+            },
             "tau_default": tau_default,
         },
         "governor_sweep": sweep,

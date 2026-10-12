@@ -33,6 +33,7 @@ import {
   type EnvState,
   type Observation,
 } from '../sim/env.ts'
+import { interp, riskFeatures, riskProbability } from '../sim/risk.ts'
 import { PCG32 } from '../sim/rng.ts'
 import { scriptedAction } from '../sim/scripted.ts'
 import {
@@ -112,6 +113,7 @@ let governor = { on: false, tau: 0.2 }
 let pending: Partial<ConditionValues> = {} // changes that arrived before init
 let pendingTrack: number | null = null
 let customTrack: { points: Float64Array; widthM: number } | null = null
+const humanInput = new Float32Array(2) // the visitor's car (Race page)
 let puddleTest = false // cars start at 20 m/s at the stadium's s = 0
 let paused = false
 let simStep = 0
@@ -197,18 +199,14 @@ function axlePuddle(state: EnvState): [number, number] {
   ]
 }
 
-/** Calibrated crash probability from ensemble disagreement (piecewise-linear table). */
-function crashProbability(u: number): number {
-  const table = opts.calibration
-  if (!table || table.u.length === 0) return NaN
-  const xs = table.u
-  const ps = table.p
-  if (u <= xs[0]!) return ps[0]!
-  for (let i = 1; i < xs.length; i++) {
-    if (u <= xs[i]!)
-      return ps[i - 1]! + ((ps[i]! - ps[i - 1]!) * (u - xs[i - 1]!)) / (xs[i]! - xs[i - 1]!)
-  }
-  return ps[ps.length - 1]!
+const riskF = new Float64Array(4)
+/** Calibrated P(crash within 2 s) for a student car (risk model, or the older table). */
+function crashProbability(d: Driver): number {
+  const cal = opts.calibration
+  if (!cal || Number.isNaN(d.uncertainty)) return NaN
+  if ('u' in cal) return interp(d.uncertainty, cal.u, cal.p)
+  riskFeatures(d.state, track, d.uncertainty, d.muHat[1]!, cfg, riskF)
+  return riskProbability(cal, riskF)
 }
 
 /** Build a generated track (seed ≥ 0) or a hand-drawn one (`custom` control points). */
@@ -329,8 +327,14 @@ function placeCars(): void {
 }
 
 function respawn(d: Driver): void {
+  const progress = d.state.progressM
   resetEnvState(d.state, track, d.state.sM - RESPAWN_BACK_M, RESPAWN_SPEED_MPS)
-  d.lapStart = simStep // a crashed lap doesn't count; the next one starts now
+  if (opts.race) {
+    // Racing: the lap clock keeps running and the car carries on from 30 m back.
+    d.state.progressM = Math.max(0, progress - RESPAWN_BACK_M) // never "wrong way" near the start
+  } else {
+    d.lapStart = simStep // a crashed lap doesn't count; the next one starts now
+  }
 }
 
 /** Standard normals for the sensor-noise slider (AI drivers only); null when noise is off. */
@@ -405,7 +409,10 @@ function step(): void {
       if (d.respawnIn === 0) respawn(d)
       continue
     }
-    if (d.kind === 'scripted') {
+    if (d.kind === 'human') {
+      action[0] = humanInput[0]!
+      action[1] = humanInput[1]!
+    } else if (d.kind === 'scripted') {
       scriptedAction(d.state, track, cfg, action, d.scripted)
     } else {
       const b = slot.get(d) ?? -1
@@ -414,7 +421,7 @@ function step(): void {
     }
     if (d.kind === 'student' && governor.on && !Number.isNaN(d.uncertainty)) {
       // Safety governor: cap the throttle as crash risk rises past τ; brake above τ + 0.2.
-      const p = crashProbability(d.uncertainty)
+      const p = crashProbability(d)
       if (p > governor.tau) {
         const cap = Math.min(1, Math.max(0, 1 - (p - governor.tau) / GOVERNOR_RAMP))
         action[1] = Math.min(action[1]!, cap)
@@ -485,7 +492,7 @@ function snapshot(): Float32Array {
     buf[o + CarField.MuRear] = grip[1]!
     buf[o + CarField.MuHatFront] = d.muHat[0]!
     buf[o + CarField.MuHatRear] = d.muHat[1]!
-    buf[o + CarField.PCrash] = Number.isNaN(d.uncertainty) ? NaN : crashProbability(d.uncertainty)
+    buf[o + CarField.PCrash] = crashProbability(d)
     buf[o + CarField.Flags] =
       (d.respawnIn > 0 ? CarFlag.Crashed : 0) |
       (d.lapFlag ? CarFlag.Lap : 0) |
@@ -621,6 +628,10 @@ const api: SimApi = {
     setActivePuddles(shared, values.puddles)
     for (const d of drivers) applyValues(d.state.cond, d)
     return values.puddles
+  },
+  async setHumanInput(steer, long) {
+    humanInput[0] = Math.max(-1, Math.min(1, steer))
+    humanInput[1] = Math.max(-1, Math.min(1, long))
   },
   async setDrivers(driver, ghosts) {
     if (!ready) {

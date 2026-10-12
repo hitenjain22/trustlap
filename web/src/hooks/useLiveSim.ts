@@ -50,6 +50,8 @@ export interface LiveSimOptions {
   fitInsetLeft?: () => number
   /** Cap on rain streaks (phones use fewer; default 1,200). */
   maxRainStreaks?: number
+  /** Race page: crashes cost time but don't restart the lap. */
+  race?: boolean
 }
 
 /** The focused car's live readings (Playground telemetry), sampled at 10 Hz. */
@@ -153,7 +155,12 @@ export function useLiveSim(opts: LiveSimOptions) {
       studentMembers: students,
       ensembleMembers: o.ensembleMembers,
       checkpoint: o.checkpoint,
-      calibration: calibration ? { u: calibration.u, p: calibration.p } : undefined,
+      race: o.race,
+      calibration: calibration
+        ? 'model' in calibration
+          ? { model: calibration.model }
+          : { u: calibration.u, p: calibration.p }
+        : undefined,
     })
     const renderer = new Renderer(canvas, {
       reducedMotion: reduced,
@@ -189,9 +196,10 @@ export function useLiveSim(opts: LiveSimOptions) {
         const files = manifest.files.map((f) => f.path)
         students = studentCount(files)
         const available = availableDrivers(files)
-        // Fall back to the best shipped driver if the requested one isn't in this build.
+        // Fall back to the best shipped driver if the requested one isn't in this build (the
+        // visitor's own car needs no network, so it is always available).
         const pick = (k: DriverKind) =>
-          available.includes(k) ? k : available[available.length - 1]!
+          k === 'human' || available.includes(k) ? k : available[available.length - 1]!
         driversRef.current = {
           driver: pick(driversRef.current.driver),
           ghosts: driversRef.current.ghosts.filter((g) => available.includes(g)),
@@ -296,6 +304,11 @@ export function useLiveSim(opts: LiveSimOptions) {
     [],
   )
 
+  /** The visitor's car (Race page): steering and throttle/brake in [−1, 1]. */
+  const setHumanInput = useCallback((steer: number, long: number) => {
+    void apiRef.current?.setHumanInput(steer, long)
+  }, [])
+
   const control = useCallback(async (action: 'pause' | 'resume' | 'reset') => {
     const api = apiRef.current
     if (!api) return
@@ -331,6 +344,7 @@ export function useLiveSim(opts: LiveSimOptions) {
     setCustomTrack,
     setView,
     startPuddleTest,
+    setHumanInput,
     control,
     setSpeed,
     setDrivers,

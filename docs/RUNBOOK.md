@@ -95,18 +95,19 @@ python -m trustlap.evaluate --blind runs/blind/final.msgpack --teacher runs/teac
 python -m trustlap.export --policy blind=runs/full/blind/final.msgpack --policy teacher=runs/full/teacher/final.msgpack \
     --students runs/full/students/students.msgpack --teacher runs/full/teacher/final.msgpack \
     --teacher-run runs/full/teacher --blind-run runs/full/blind --metrics runs/full/eval/metrics_partial.json \
-    --golden --closed-loop blind
+    --train-hardware "NVIDIA T4 GPU (Kaggle)" --golden --closed-loop blind
 cd ../web && npm test && npm run build      # parity + budgets must pass
 ```
 
-7. Update the model-card compute line (`web/src/copy/strings.ts`, `how.card`) and `metrics.json`'s `train_hardware` (set in `export.py`), commit, push. If it disconnects, run all again: every stage resumes from its checkpoint.
+7. Update the model-card compute line (`web/src/copy/strings.ts`, `how.card`) if it names hardware (`train_hardware` comes from `--train-hardware`), commit, push. If it disconnects, run all again: every stage resumes from its checkpoint.
 
 ## Publishing results
 
 ```bash
 python -m trustlap.export --policy blind=runs/blind/final.msgpack --policy teacher=runs/teacher/final.msgpack \
     --students runs/students/students.msgpack --teacher runs/teacher/final.msgpack \
-    --teacher-run runs/teacher --blind-run runs/blind --metrics runs/eval/metrics_partial.json --golden --closed-loop blind
+    --teacher-run runs/teacher --blind-run runs/blind --metrics runs/eval/metrics_partial.json \
+    --train-hardware "laptop CPU (Intel, 4 threads) with JAX 0.4.38" --golden --closed-loop blind
 ```
 
 This writes every artifact (weights, training records, metrics, calibration), regenerates the parity fixtures, refreshes the manifest and rewrites the README's numbers block from `metrics.json`.

@@ -51,6 +51,7 @@ export const metricsSchema = z.object({
         iqr: z.array(num).length(2).nullable(),
         trials: z.number().int().optional(),
         noticed: z.number().int().optional(),
+        control_noticed: z.number().int().optional(),
         never_settled: z.number().int().optional(),
         definition: z.string().optional(),
       }),

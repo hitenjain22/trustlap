@@ -6,10 +6,10 @@ AI race cars that teach themselves to drive in the rain, and know when they're u
 
 <!-- metrics:start -->
 - 65,536 cars simulated in parallel on one T4 GPU, 926× faster than the same JAX code on its CPU
-- PPO drivers with population-based training and an automatic curriculum: 160M env steps in 136 min on a laptop CPU (Intel, 4 threads) with JAX 0.4.38
-- A learned adaptation module estimates road grip from 1 s of motion: laps completed vs a non-adaptive driver on unseen tracks: puddles 14% vs 1%, wet 28% vs 5%, worn tires 84% vs 75%
-- Honest headline: in the everything-at-once conditions the student crashes 8% more than the non-adaptive driver (95% CI 2% to 15% more)
-- Ensemble crash-risk estimate: calibrated (ECE 0.026) but weakly predictive (AUROC 0.64)
+- PPO drivers with population-based training and an automatic curriculum: 2,999M env steps in 83 min on a NVIDIA T4 GPU (Kaggle)
+- A learned adaptation module estimates road grip from 1 s of motion: laps completed vs a non-adaptive driver on unseen tracks: puddles 38% vs 2%, wet 39% vs 4%, worn tires 86% vs 78%
+- Honest headline: in the everything-at-once conditions the student crashes 5% fewer than the non-adaptive driver (95% CI 0% to 10%)
+- Ensemble crash-risk estimate: calibrated (ECE 0.019) but weakly predictive (AUROC 0.58)
 <!-- metrics:end -->
 
 ![TrustLap hero: self-taught cars on a procedurally generated track in the rain](web/public/og.png)
@@ -46,8 +46,9 @@ python -m trustlap.train --agent blind --env-steps 40e6 --out runs/blind
 ## Honest limitations
 
 - Simulated only: a flat 2D world, one car type, two "axles" standing in for four tires. No claims about real cars.
-- The published networks were trained overnight on a laptop CPU, far below the design's GPU budgets. The curriculum reached about half of full difficulty, and drivers fail sharply beyond it (e.g. heavy rain, 2-step input delay, strong sensor noise).
-- The adaptive student beats the non-adaptive driver where grip changes (puddles, wet roads, worn tires) but not everywhere, and the teacher it imitates had half the blind driver's training steps.
+- The published networks come from one training run each, at the design's budgets on one T4 GPU (Kaggle). Even so the curriculum stopped short of full difficulty (the Training lab shows where), and drivers fail sharply beyond it (e.g. ice, 2-step input delay, strong sensor noise).
+- The adaptive student beats the non-adaptive driver where grip changes (puddles, wet roads, worn tires) and with a very heavy car, but loses on dry roads, in wind and with noisy sensors. Each teacher had two-thirds of the blind driver's training steps.
+- The student does not notice a single puddle while driving through it, measured against the same runs without the puddle (Results).
 - All students share one teacher policy, so their disagreement measures uncertainty about the road, not about the driving.
 
 ## Credits

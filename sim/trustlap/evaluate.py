@@ -340,33 +340,57 @@ def stadium_bank(
     return make_bank([track])
 
 
+NOTICE_MARGIN_MS = 500.0  # a response must come while grip is low or within this long after
+
+
+def notice_latencies(
+    mu: np.ndarray, mu_hat: np.ndarray, mu_hat_ctl: np.ndarray, dt_ms: float
+) -> tuple[np.ndarray, np.ndarray, int]:
+    """Per-trial puddle-notice latency (ms, NaN = not noticed), which trials had a grip drop at
+    all, and the control's false-alarm count. Outputs are indexed by trial.
+
+    Arrays are [T, trials] rear grip: true, estimated, and estimated in the no-puddle control.
+    Trials whose true grip never drops by 0.1 don't count. "Noticed" = the estimate falls by at
+    least half of the true drop while grip is low or within `NOTICE_MARGIN_MS` after it recovers.
+    """
+    margin = int(round(NOTICE_MARGIN_MS / dt_ms))
+    base = mu[0]
+    latencies = np.full(mu.shape[1], np.nan)
+    dropped = np.zeros(mu.shape[1], bool)
+    false_alarms = 0
+    for i in range(mu.shape[1]):
+        low = np.nonzero(mu[:, i] < base[i] - 0.1)[0]
+        if len(low) == 0:
+            continue
+        dropped[i] = True
+        t0 = int(low[0])
+        t_end = min(mu.shape[0], int(low[-1]) + 1 + margin)
+        threshold = 0.5 * (base[i] - mu[t0:, i].min())
+        # (Earlier definitions were met when the car left the puddle, or by a dip seconds later.)
+        hit = np.nonzero(mu_hat[t0:t_end, i] <= mu_hat[t0, i] - threshold)[0]
+        if len(hit):
+            latencies[i] = hit[0] * dt_ms
+        ctl = np.nonzero(mu_hat_ctl[t0:t_end, i] <= mu_hat_ctl[t0, i] - threshold)[0]
+        false_alarms += int(len(ctl) > 0)
+    return latencies, dropped, false_alarms
+
+
 def puddle_step(
     act: ActFn, trials: int = 200, seed: int = 0, puddle_s_m: float = 200.0, steps: int = 260
 ) -> dict[str, Any]:
-    """Single puddle (m = 0.4) 200 m down a straight; car at 20 ± 2 m/s. Latency = time from the
-    true rear grip first dropping by more than 0.1 until the estimate has fallen by at least half
-    of the true drop; trials where it never does count as "not noticed"."""
+    """Single puddle (m = 0.4, radius 8 m) 200 m down a straight; car at 20 ± 2 m/s.
+
+    Latency = time from the true rear grip first dropping by more than 0.1 until the estimate
+    has fallen by at least half of the true drop. It only counts if that happens while the true
+    grip is still low or within `NOTICE_MARGIN_MS` after it recovers: a later dip is a knock-on
+    effect of the disturbance, not noticing the puddle. The same rule is applied to an identical
+    no-puddle control run (same trials, same thresholds) and its count reported as false alarms.
+    """
     bank = stadium_bank()
     env = Env(bank)
-    rng = np.random.default_rng(seed)
+    bank_j = env.bank
     c = nominal_conditions(CONFIG, jnp)
     p = CONFIG.conditions.puddle_slots
-    lateral = rng.uniform(-1.5, 1.5, trials).astype(np.float32)
-    conds = jax.vmap(
-        lambda lat: c._replace(
-            puddle_s_m=jnp.zeros(p).at[0].set(puddle_s_m),
-            puddle_lateral_m=jnp.zeros(p).at[0].set(lat),
-            puddle_mult=jnp.ones(p).at[0].set(0.4),
-            puddle_radius_m=jnp.full(p, 8.0),
-            puddle_active=jnp.zeros(p).at[0].set(1.0),
-        )
-    )(jnp.asarray(lateral))
-    state, obs = env.eval_reset(
-        jax.random.split(jax.random.key(seed), trials), jnp.zeros(trials, jnp.int32), conds
-    )
-    # 20 m/s ± 2 so the 200 trials differ (entry speed changes how fast the rear crosses the edge).
-    speeds = jnp.asarray(rng.uniform(18.0, 22.0, trials).astype(np.float32))
-    state = state._replace(car=state.car._replace(vx_mps=speeds))
     zero2 = jnp.zeros(2)
 
     @jax.jit
@@ -388,26 +412,40 @@ def puddle_step(
         _, (mu, mu_hat) = jax.lax.scan(body, (state, obs), None, length=steps)
         return mu, mu_hat
 
-    bank_j = env.bank
-    mu, mu_hat = (np.asarray(x) for x in roll(state, obs))  # [T, trials]
+    def rollout(mult: float) -> tuple[np.ndarray, np.ndarray]:
+        """[T, trials] true and estimated rear grip; every call uses the same trials."""
+        rng = np.random.default_rng(seed)
+        lateral = rng.uniform(-1.5, 1.5, trials).astype(np.float32)
+        conds = jax.vmap(
+            lambda lat: c._replace(
+                puddle_s_m=jnp.zeros(p).at[0].set(puddle_s_m),
+                puddle_lateral_m=jnp.zeros(p).at[0].set(lat),
+                puddle_mult=jnp.ones(p).at[0].set(mult),
+                puddle_radius_m=jnp.full(p, 8.0),
+                puddle_active=jnp.zeros(p).at[0].set(1.0),
+            )
+        )(jnp.asarray(lateral))
+        state, obs = env.eval_reset(
+            jax.random.split(jax.random.key(seed), trials), jnp.zeros(trials, jnp.int32), conds
+        )
+        # 20 m/s ± 2 so trials differ (entry speed changes how fast the rear crosses the edge).
+        speeds = jnp.asarray(rng.uniform(18.0, 22.0, trials).astype(np.float32))
+        state = state._replace(car=state.car._replace(vx_mps=speeds))
+        mu, mu_hat = roll(state, obs)
+        return np.asarray(mu), np.asarray(mu_hat)
+
+    mu, mu_hat = rollout(0.4)
+    _, mu_hat_ctl = rollout(1.0)  # no puddle: grip never drops
     dt_ms = CONFIG.time.control_dt_s * 1000
+    lat, dropped, false_alarms = notice_latencies(mu, mu_hat, mu_hat_ctl, dt_ms)
     base = mu[0]
-    latencies = []
-    for i in range(trials):
-        drop = np.nonzero(mu[:, i] < base[i] - 0.1)[0]
-        if len(drop) == 0:
-            continue
-        t0 = drop[0]
-        # "Noticed" = the estimate has fallen by at least half of the true drop. (An earlier
-        # definition, |μ̂ − μ| < 0.1, was also met when the car simply left the puddle.)
-        true_drop = base[i] - mu[t0:, i].min()
-        noticed = np.nonzero(mu_hat[t0:, i] <= mu_hat[t0, i] - 0.5 * true_drop)[0]
-        latencies.append(noticed[0] * dt_ms if len(noticed) else np.nan)
-    lat = np.array(latencies)
     finite = lat[np.isfinite(lat)]
-    # Representative series: the median trial if any noticed, else the first trial.
-    rep = int(np.nanargmin(np.abs(lat - np.nanmedian(lat)))) if len(finite) else 0
-    drop0 = int(np.nonzero(mu[:, rep] < base[rep] - 0.1)[0][0]) if len(lat) else 0
+    # Representative series: the median noticed trial if any, else the first trial with a drop.
+    if len(finite):
+        rep = int(np.nanargmin(np.abs(lat - np.median(finite))))
+    else:
+        rep = int(np.argmax(dropped))
+    drop0 = int(np.nonzero(mu[:, rep] < base[rep] - 0.1)[0][0]) if dropped.any() else 0
     lo, hi = max(0, drop0 - 20), min(mu.shape[0], drop0 + 60)
     return {
         "latency_ms": {
@@ -415,11 +453,14 @@ def puddle_step(
             "iqr": [float(np.percentile(finite, 25)), float(np.percentile(finite, 75))]
             if len(finite)
             else None,
-            "trials": int(len(lat)),
+            "trials": int(dropped.sum()),
             "noticed": int(len(finite)),
+            "control_noticed": false_alarms,
             "definition": (
-                "time from the true rear grip dropping by 0.1 until the estimate "
-                "has fallen by half the true drop"
+                "time from the true rear grip dropping by 0.1 until the estimate has fallen by "
+                f"half the true drop, counted only while grip is low or within "
+                f"{NOTICE_MARGIN_MS:.0f} ms after; control_noticed = same rule on the same "
+                "trials without the puddle"
             ),
         },
         "series": {
@@ -657,7 +698,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("--blind", type=Path, required=True)
+    parser.add_argument("--blind", type=Path, default=None)
     parser.add_argument("--teacher", type=Path, required=True)
     parser.add_argument("--students", type=Path, required=True)
     parser.add_argument("--test-bank", type=Path, default=Path("runs/banks/test.npz"))
@@ -670,9 +711,27 @@ def main() -> None:
     )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--out", type=Path, default=Path("runs/eval"))
+    parser.add_argument(
+        "--puddle-only",
+        type=Path,
+        default=None,
+        metavar="METRICS_JSON",
+        help="recompute only the puddle step response and merge it into this evaluation output",
+    )
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
-    metrics = evaluate(args)
+    if args.puddle_only:
+        metrics = json.loads(args.puddle_only.read_text())
+        step = puddle_step(_student(args.teacher, args.students), seed=args.seed)
+        metrics["headline"]["puddle_latency_ms"] = step["latency_ms"]
+        metrics["puddle_step"] = step["series"]
+        metrics["protocol"]["puddle_step_recomputed_utc"] = dt.datetime.now(
+            dt.timezone.utc
+        ).isoformat(timespec="seconds")
+    elif args.blind is None:
+        parser.error("--blind is required for a full evaluation")
+    else:
+        metrics = evaluate(args)
     (args.out / "metrics_partial.json").write_text(json.dumps(metrics, indent=1, default=float))
     print(f"wrote {args.out / 'metrics_partial.json'}")
 

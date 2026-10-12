@@ -515,8 +515,14 @@ def update_readme(metrics: dict[str, Any], readme: Path = REPO / "README.md") ->
         readme.write_text(f"{head}{start}\n{readme_block(metrics)}\n{end}{tail}")
 
 
-def export_metrics(partial: Path, runs: list[Path], out_dir: Path = ARTIFACTS) -> dict[str, Any]:
-    """Assemble metrics.json from the evaluation output, the benchmark and the training logs."""
+def export_metrics(
+    partial: Path, runs: list[Path], train_hardware: str, out_dir: Path = ARTIFACTS
+) -> dict[str, Any]:
+    """Assemble metrics.json from the evaluation output, the benchmark and the training logs.
+
+    `train_hardware` describes where the runs trained (shown on the model card); the logs don't
+    record the device, so the caller states it.
+    """
     metrics = json.loads(partial.read_text())
     head = metrics["headline"]
     bench_path = RESULTS / "bench_t4.json"
@@ -535,7 +541,7 @@ def export_metrics(partial: Path, runs: list[Path], out_dir: Path = ARTIFACTS) -
     steps, minutes = _training_totals(runs)
     head["train_env_steps_total"] = steps
     head["train_wall_minutes"] = minutes
-    head["train_hardware"] = "laptop CPU (Intel, 4 threads) with JAX 0.4.38"
+    head["train_hardware"] = train_hardware
     metrics["git_sha"] = _git_sha()
     _write_json(out_dir / "metrics.json", metrics)
     cal = metrics["calibration"]
@@ -921,6 +927,11 @@ def main() -> None:
     parser.add_argument("--teacher-run", type=Path, default=None, help="teacher run dir")
     parser.add_argument("--blind-run", type=Path, default=None, help="blind run dir")
     parser.add_argument("--metrics", type=Path, default=None, help="evaluate.py output to publish")
+    parser.add_argument(
+        "--train-hardware",
+        default=None,
+        help='where the runs trained, e.g. "NVIDIA T4 GPU (Kaggle)"; required with --metrics',
+    )
     args = parser.parse_args()
     policies = dict(item.split("=", 1) for item in args.policy)
     policies = {k: Path(v) for k, v in policies.items()}
@@ -932,10 +943,12 @@ def main() -> None:
         print(f"students → {len(metas)} × policies/student_<k>.json")
     if args.teacher_run or args.blind_run:
         export_training(args.teacher_run, args.blind_run)
+    if args.metrics and not args.train_hardware:
+        parser.error("--metrics needs --train-hardware (the training logs don't record the device)")
     if args.metrics:
         student_run = args.students.parent if args.students else None
         runs = [p for p in (args.blind_run, args.teacher_run, student_run) if p]
-        export_metrics(args.metrics, runs)
+        export_metrics(args.metrics, runs, args.train_hardware)
         print("metrics → metrics.json, calibration.json")
     if not args.only_golden:
         export_artifacts()

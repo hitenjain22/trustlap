@@ -191,7 +191,7 @@ export const strings = {
         what: 'One difficulty dial from 0 to 1 widens every condition range: rain, grip, wind, tire wear, mass, power, brakes, lag, delay and sensor noise. It rises when drivers finish over 80% of laps twice in a row and backs off below 50%.',
         why: 'Starting in a storm, nothing learns. Starting dry and stopping there, nothing generalizes. The dial keeps the task hard but learnable.',
         measured:
-          'The difficulty reached in training (Training lab). With the overnight CPU budget it reached about half of the full ranges, and that limit shows up clearly in the results.',
+          'The difficulty reached in training (Training lab). Even at the full training budget neither population reached the top of the dial, and the conditions beyond what they reached are where the drivers fail (Results).',
         borrowed:
           'Inspired by Automatic Domain Randomization (OpenAI et al., 2019); this is a single global dial, not the full per-parameter version.',
       },
@@ -211,7 +211,7 @@ export const strings = {
         what: 'A driver that is told the true conditions (grip under each axle, puddles ahead, mass, wind…) through a small encoder network that compresses them into 8 numbers.',
         why: 'It shows how well a driver can do when it knows everything, and its 8-number summary is what the student learns to estimate.',
         measured:
-          'Completion in every condition (Results). At this compute the teacher didn’t beat the blind driver everywhere, partly because each teacher got half the blind driver’s training steps.',
+          'Completion in every condition (Results). It beats the blind driver in the wet, on puddles, worn tires and heavier cars, but not in wind or with noisy sensors; each teacher trained for two-thirds of the blind driver’s steps.',
         borrowed: 'Phase 1 of Rapid Motor Adaptation (Kumar, Fu, Pathak, Malik, 2021).',
       },
       {
@@ -220,7 +220,7 @@ export const strings = {
         what: 'A second network reads the last second of motion (20 steps of speed, slip, steering and pedal inputs) and estimates the teacher’s 8-number summary plus the grip under each axle. The teacher’s driving network then acts on that estimate.',
         why: 'A real car isn’t told the road is wet. It has to feel it from how the car responds.',
         measured:
-          'Grip estimate error; whether it notices a single puddle (in controlled tests it didn’t, on a straight or mid-corner); and completion vs the blind driver: better on puddles, wet roads and worn tires, worse in several other conditions. Why it does better in the wet isn’t isolated yet (Results).',
+          'Grip estimate error; whether it notices a single puddle (in controlled tests it doesn’t, compared against the same runs without the puddle); and completion vs the blind driver: better on puddles, wet roads, worn tires and a very heavy car, worse on dry roads, in wind and with noisy sensors. Why it does better in the wet isn’t isolated yet (Results).',
         borrowed:
           'Phase 2 of Rapid Motor Adaptation (Kumar et al., 2021), trained DAgger-style (Ross et al., 2011).',
       },
@@ -230,7 +230,7 @@ export const strings = {
         what: 'Five students trained with different seeds. When their estimates disagree, the car is probably somewhere it doesn’t understand. That disagreement is turned into a crash probability with isotonic regression; a safety governor eases off above a threshold.',
         why: 'A driver that can say “I’m not sure” is more useful than one that is confidently wrong.',
         measured:
-          'Calibration (reliability diagram, ECE, Brier, AUROC) and the governor’s crash-vs-speed trade-off (Results). The estimate is calibrated but only weakly predictive, and the governor didn’t reduce crashes at this compute.',
+          'Calibration (reliability diagram, ECE, Brier, AUROC) and the governor’s crash-vs-speed trade-off (Results). The estimate is calibrated but only weakly predictive; the governor helped clearly in one condition (laggy steering) and made little difference elsewhere.',
         borrowed:
           'Deep-ensemble uncertainty (Lakshminarayanan et al., 2017); isotonic calibration (Zadrozny & Elkan, 2002).',
       },
@@ -266,7 +266,7 @@ export const strings = {
         ],
         [
           'Compute',
-          'Overnight on a laptop CPU: blind 40M steps, teacher population 4 × 20M, students 5 × 8M (well below the GPU budgets in the design).',
+          'One NVIDIA T4 GPU on Kaggle: blind population 8 × 150M steps, teacher population 16 × 100M, students 5 × 40M (the training budgets in the design). Total steps and wall time are on the Results page.',
         ],
         [
           'Intended use',
@@ -275,7 +275,7 @@ export const strings = {
         ['Not for', 'Anything involving real vehicles.'],
         [
           'Known limits',
-          'Flat 2D world, one car type, four-wheel effects collapsed into two axles, reduced training compute; the students share one teacher policy, so their disagreement reflects uncertainty about the road, not about the driving.',
+          'Flat 2D world, one car type, four-wheel effects collapsed into two axles, one training run per driver (no repeat seeds); the students share one teacher policy, so their disagreement reflects uncertainty about the road, not about the driving.',
         ],
       ] as [string, string][],
       resultsLead: 'Every number on this site comes from the evaluation script.',
@@ -287,11 +287,8 @@ export const strings = {
       commands: `# simulator, training, evaluation (sim/)
 pip install -e "sim[dev]"
 python -m trustlap.track --out runs/banks
-python -m trustlap.train --agent blind --env-steps 40e6 --out runs/blind
-python -m trustlap.train --agent teacher --population 4 --env-steps 20e6 --out runs/teacher
-python -m trustlap.student --teacher runs/teacher/final.msgpack --out runs/students --env-steps 8e6
-python -m trustlap.evaluate --blind runs/blind/final.msgpack --teacher runs/teacher/final.msgpack \
-    --students runs/students/students.msgpack --seeds 2 --out runs/eval
+bash scripts/full_pipeline.sh runs/full   # GPU: banks, blind, teacher PBT, students, evaluation
+# (sim/notebooks/train_full.ipynb runs the same thing on Kaggle or Colab)
 
 # website (web/)
 npm ci && npm run dev`,
@@ -301,7 +298,7 @@ npm ci && npm run dev`,
   lab: {
     title: 'Training lab',
     intro:
-      'How the teacher driver learned: a population trained side by side on the laptop CPU, copying each other’s best ideas while the simulator made the world harder.',
+      'How the teacher driver learned: a population trained side by side on one GPU, copying each other’s best ideas while the simulator made the world harder.',
     source:
       'From population_curves.json, lineage.json, curriculum.json and checkpoints/ · recorded during training',
     watch: {
@@ -388,10 +385,12 @@ npm ci && npm run dev`,
       notNoticed: 'Not noticed',
       notNoticedNote: (n: number, of: number) =>
         `Noticed a single puddle on a straight in ${n} of ${of} trials.`,
+      noticedSomeNote: (n: number, of: number, lo: number, hi: number) =>
+        `Noticed in ${n} of ${of} trials; median of those, middle half ${lo}–${hi} ms`,
       cars: 'Cars simulated at once',
       carsNote: (speedup: string) => `On one GPU, ${speedup}× faster than the same code on a CPU`,
       compute: 'Training compute',
-      computeNote: (minutes: string, hw: string) => `${minutes} minutes on a ${hw}`,
+      computeNote: (minutes: string, hw: string) => `${minutes} minutes · ${hw}`,
     },
     figures: {
       completion: {
@@ -427,10 +426,12 @@ npm ci && npm run dev`,
         axis: 'Laps completed',
       },
       puddle: {
-        title: (ms: number) =>
-          `The student notices a puddle under the rear wheels in about ${ms} ms`,
+        title: (ms: number, n?: number, of?: number) =>
+          n != null && of != null && n < of
+            ? `The student notices a single puddle in ${n} of ${of} trials, after about ${ms} ms when it does`
+            : `The student notices a puddle under the rear wheels in about ${ms} ms`,
         titleNotNoticed: (n: number, of: number) =>
-          `The student doesn’t notice a single puddle on a straight (${n} of ${of} trials noticed): it passes in under a second and barely changes the motion the student reads`,
+          `The student doesn’t notice a single puddle on a straight (${n} of ${of} trials noticed): it passes in under half a second and barely changes the motion the student reads`,
         titleMissing: 'Feeling a puddle',
         subtitle:
           'True rear grip (blue) vs the student’s estimate (amber) as the car crosses a single puddle on a straight. Time 0 is when the true grip first drops by more than 0.1.',
@@ -449,6 +450,8 @@ npm ci && npm run dev`,
       governor: {
         neutral: 'Safety vs speed',
         title: 'The safety governor trades lap time for fewer crashes',
+        titleNoEffect:
+          'In everything-at-once conditions, no governor threshold clearly reduces crashes',
         subtitle:
           'Each point is a risk threshold τ: above it the car eases off. Everything-at-once conditions, paired lap times.',
         x: 'Paired lap time (s)',
@@ -476,7 +479,7 @@ npm ci && npm run dev`,
       'Everything here is simulated. A real car has suspension, load transfer, four tires and sensors that fail in ways this model doesn’t.',
       'The world is flat and two-dimensional, with one kind of car.',
       'All five students share one teacher’s driving policy, so their disagreement measures uncertainty about the road, not about the driving itself.',
-      'Training ran at reduced scale on a laptop CPU (exact compute above). Bigger runs could change every number.',
+      'Each driver comes from one training run on one GPU (compute above). Other seeds or longer runs could change these numbers.',
       'Results that don’t favor the student are shown as they came out.',
     ],
   },

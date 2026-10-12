@@ -3,7 +3,7 @@
  "name": "student_0",
  "bin": "student_0.bin",
  "bytes": 342568,
- "sha256": "7f60046b0a1137f097ac71a811c0ef2a7ba17d622cc6d6b942314cebba560f34",
+ "sha256": "99d01ca2dd2cca24bca61e6f5a140014525826424b0cf52650aad1a96752d6cc",
  "networks": {
   "trunk": [
    {
@@ -45,11 +45,11 @@
  "member": 0,
  "grip_scale": 1.3,
  "training": {
-  "updates": 488,
-  "env_steps_per_member": 7995392,
+  "updates": 1220,
+  "env_steps_per_member": 39976960,
   "members": 5,
-  "teacher": "runs/teacher/final.msgpack",
-  "difficulty": 0.45,
+  "teacher": "runs/full/teacher/final.msgpack",
+  "difficulty": 0.7,
   "config_hash": "f832929f904b4565fe22441782b828b914233cbffa3adff08bcc9ec7c86732b7"
  }
 }

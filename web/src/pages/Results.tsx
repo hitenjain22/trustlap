@@ -178,6 +178,10 @@ export default function Results() {
   const sweep = (m.governor_sweep ?? []).filter(
     (r) => finite(r.crash) && finite(r.paired_lap_time_s),
   )
+  // Claim fewer crashes only if some threshold's crash interval sits wholly below "governor off".
+  const govOff = sweep.find((r) => r.tau === null)
+  const govHelps =
+    govOff != null && sweep.some((r) => r.tau !== null && r.crash.ci[1]! < govOff.crash.value!)
   const govSeries: Series[] = sweep.length
     ? [
         {
@@ -302,11 +306,18 @@ export default function Results() {
                 : null
           }
           note={
-            lat?.iqr
-              ? S.tiles.latencyNote(Math.round(lat.iqr[0]!), Math.round(lat.iqr[1]!))
-              : lat?.noticed === 0 && lat.trials
-                ? S.tiles.notNoticedNote(0, lat.trials)
-                : ''
+            lat?.iqr && lat.noticed != null && lat.trials && lat.noticed < lat.trials
+              ? S.tiles.noticedSomeNote(
+                  lat.noticed,
+                  lat.trials,
+                  Math.round(lat.iqr[0]!),
+                  Math.round(lat.iqr[1]!),
+                )
+              : lat?.iqr
+                ? S.tiles.latencyNote(Math.round(lat.iqr[0]!), Math.round(lat.iqr[1]!))
+                : lat?.noticed === 0 && lat.trials
+                  ? S.tiles.notNoticedNote(0, lat.trials)
+                  : ''
           }
         />
         <StatTile
@@ -318,7 +329,9 @@ export default function Results() {
           label={S.tiles.compute}
           value={
             h.train_env_steps_total != null
-              ? `${Math.round(h.train_env_steps_total / 1e6)}M steps`
+              ? h.train_env_steps_total >= 1e9
+                ? `${(h.train_env_steps_total / 1e9).toFixed(1)}B steps`
+                : `${Math.round(h.train_env_steps_total / 1e6)}M steps`
               : null
           }
           note={
@@ -447,7 +460,7 @@ export default function Results() {
         <ChartFrame
           title={
             lat?.median != null
-              ? S.figures.puddle.title(Math.round(lat.median))
+              ? S.figures.puddle.title(Math.round(lat.median), lat.noticed, lat.trials)
               : lat?.noticed === 0 && lat.trials
                 ? S.figures.puddle.titleNotNoticed(0, lat.trials)
                 : S.figures.puddle.titleMissing
@@ -512,7 +525,13 @@ export default function Results() {
         </ChartFrame>
 
         <ChartFrame
-          title={sweep.length ? S.figures.governor.title : S.figures.governor.neutral}
+          title={
+            !sweep.length
+              ? S.figures.governor.neutral
+              : govHelps
+                ? S.figures.governor.title
+                : S.figures.governor.titleNoEffect
+          }
           subtitle={S.figures.governor.subtitle}
           summary="Crash rate against lap time for each governor threshold."
           table={

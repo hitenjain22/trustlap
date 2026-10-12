@@ -33,21 +33,25 @@ test('home: live hero canvas draws and cars drive', async ({ page }) => {
 test('home: the adaptive cars slow down when it starts raining (within their training range)', async ({
   page,
 }) => {
-  test.setTimeout(45_000)
+  test.setTimeout(75_000)
   await page.goto('/')
   const slider = page.getByRole('slider', { name: 'Rain' })
   await slider.fill('0')
-  // Cars launch from a standing grid; their mean speed settles after ~11 s on a dry track.
-  await page.waitForTimeout(12_000)
+  // Cars launch from a standing grid; their mean speed settles after ~11 s of *simulated* time.
+  // Wait on the sim's step counter (20 Hz), not the wall clock: a busy machine runs the sim
+  // slower than real time, and measuring "dry" mid-launch would hide the slowdown.
+  const simSeconds = async () =>
+    Number(await page.locator('canvas').first().getAttribute('data-step')) / 20
+  await expect.poll(simSeconds, { timeout: 40_000, intervals: [500] }).toBeGreaterThan(12)
   const dry = await meanSpeed(page)
+  expect(dry).toBeGreaterThan(15)
   // 45% rain is inside the range the student trained on. It has to *feel* the lower grip
   // through its motion history, so it slows over a few seconds rather than instantly.
-  // Measured locally: −2% after 2.5 s, −10% after 5 s, no crashes.
+  // Measured locally (GPU-trained students): −1 to −3% after 1 s, −13 to −18% after 4 s of sim.
   await slider.fill('0.45')
-  await page.waitForTimeout(5000)
-  const wet = await meanSpeed(page)
-  expect(dry).toBeGreaterThan(15)
-  expect(wet).toBeLessThan(dry * 0.95)
+  await expect
+    .poll(() => meanSpeed(page), { timeout: 15_000, intervals: [500] })
+    .toBeLessThan(dry * 0.95)
 })
 
 test('playground: sliders show the training band and warn outside it', async ({ page }) => {

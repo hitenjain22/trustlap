@@ -132,7 +132,12 @@ function Story() {
     loadBench().then(setBench, () => setBench(null))
     loadMetrics().then(setMetrics, () => setMetrics(null))
   }, [])
-  const latency = metrics?.headline?.puddle_latency_ms?.median
+  // Only claim a reaction time if the student noticed the puddle in most trials.
+  const lat = metrics?.headline?.puddle_latency_ms
+  const latency =
+    lat?.median != null && (lat.noticed == null || !lat.trials || lat.noticed >= lat.trials / 2)
+      ? lat.median
+      : null
   const ece = metrics?.calibration?.ece
   const head = bench ? benchHeadline(bench) : null
   const steps = strings.story.steps

@@ -35,3 +35,23 @@ def test_cluster_bootstrap_brackets_the_mean() -> None:
     grid = rng.uniform(size=(50, 3))
     lo, hi = cluster_bootstrap(grid, rng)
     assert lo < grid.mean() < hi
+
+
+def test_notice_latencies_window_and_control() -> None:
+    """A prompt response counts; a dip seconds later doesn't; control dips are counted."""
+    from trustlap.evaluate import notice_latencies
+
+    t = 100
+    mu = np.full((t, 3), 1.0)
+    mu[10:16] = 0.6  # true grip low for 6 steps (300 ms at 50 ms)
+    mu[:, 2] = 1.0  # trial 2 never drops: skipped
+    hat = np.full((t, 3), 1.0)
+    hat[12:, 0] = 0.75  # trial 0: falls by ≥ half the 0.4 drop 2 steps in → 100 ms
+    hat[60:, 1] = 0.7  # trial 1: dips 2.5 s later, outside the window → not noticed
+    ctl = np.full((t, 3), 1.0)
+    ctl[14:, 1] = 0.7  # control dips inside trial 1's window → one false alarm
+    lat, dropped, false_alarms = notice_latencies(mu, hat, ctl, dt_ms=50.0)
+    assert dropped.tolist() == [True, True, False]
+    assert lat[0] == 100.0
+    assert np.isnan(lat[1]) and np.isnan(lat[2])
+    assert false_alarms == 1

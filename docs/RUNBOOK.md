@@ -126,3 +126,10 @@ Run `--golden` after **any** change to physics, tracks, observations, reward, ep
 ## Evaluation
 
 Filled in at M6.
+
+## README GIF
+
+```bash
+cd web && npm run build && npm run preview &        # http://localhost:4173
+node scripts/readme-gif.mjs http://localhost:4173 ../docs/media/hero.gif   # needs uv (uvx) for Pillow
+```

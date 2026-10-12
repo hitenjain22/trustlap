@@ -6,13 +6,13 @@ AI race cars that teach themselves to drive in the rain, and know when they're u
 
 <!-- metrics:start -->
 - 65,536 cars simulated in parallel on one T4 GPU, 926× faster than the same JAX code on its CPU
-- PPO drivers with population-based training and an automatic curriculum: 2,999M env steps in 83 min on a NVIDIA T4 GPU (Kaggle)
-- A learned adaptation module estimates road grip from 1 s of motion: laps completed vs a non-adaptive driver on unseen tracks: puddles 38% vs 2%, wet 39% vs 4%, worn tires 86% vs 78%
+- PPO drivers with population-based training and an automatic curriculum: 3.0B env steps in 83 min · NVIDIA T4 GPU (Kaggle)
+- A learned adaptation module estimates road grip from 1 s of motion: laps completed vs a non-adaptive driver on unseen tracks: puddles 38% vs 2%, wet 39% vs 4%, worn tires 86% vs 78%. It does not notice a single puddle while driving through it (0 of 200 controlled trials)
 - Honest headline: in the everything-at-once conditions the student crashes 5% fewer than the non-adaptive driver (95% CI 0% to 10%)
 - Ensemble crash-risk estimate: calibrated (ECE 0.019) but weakly predictive (AUROC 0.58)
 <!-- metrics:end -->
 
-![TrustLap hero: self-taught cars on a procedurally generated track in the rain](web/public/og.png)
+![The live hero as the rain rises: the self-taught cars slow down and bunch up on the wet track](docs/media/hero.gif)
 
 ## What it is
 

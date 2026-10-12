@@ -468,20 +468,30 @@ def readme_block(metrics: dict[str, Any]) -> str:
             f"{h['gpu_speedup_vs_cpu']:,.0f}× faster than the same JAX code on its CPU"
         )
     if "train_env_steps_total" in h:
+        steps = h["train_env_steps_total"]
+        steps_text = f"{steps / 1e9:.1f}B" if steps >= 1e9 else f"{steps / 1e6:,.0f}M"
         lines.append(
             f"- PPO drivers with population-based training and an automatic curriculum: "
-            f"{h['train_env_steps_total'] / 1e6:,.0f}M env steps in "
-            f"{h['train_wall_minutes']:.0f} min on a {h['train_hardware']}"
+            f"{steps_text} env steps in {h['train_wall_minutes']:.0f} min · {h['train_hardware']}"
         )
     if {"puddles", "wet", "worn"} <= s.keys():
-        lat = h.get("puddle_latency_ms", {}).get("median")
+        pl = h.get("puddle_latency_ms", {})
+        lat, noticed, trials = pl.get("median"), pl.get("noticed"), pl.get("trials")
+        # Claim a reaction time only if most trials noticed (as on the site).
+        mostly = lat is not None and (noticed is None or not trials or noticed >= trials / 2)
         lines.append(
             "- A learned adaptation module estimates road grip from 1 s of motion"
-            + (f" (notices a puddle in ~{lat:.0f} ms)" if lat is not None else "")
+            + (f" (notices a puddle in ~{lat:.0f} ms)" if mostly else "")
             + ": laps completed vs a non-adaptive driver on unseen tracks: "
             f"puddles {comp('puddles', 'student')} vs {comp('puddles', 'blind')}, "
             f"wet {comp('wet', 'student')} vs {comp('wet', 'blind')}, "
             f"worn tires {comp('worn', 'student')} vs {comp('worn', 'blind')}"
+            + (
+                f". It does not notice a single puddle while driving through it "
+                f"({noticed} of {trials} controlled trials)"
+                if noticed is not None and trials and not mostly
+                else ""
+            )
         )
     red = h.get("student_crash_reduction_vs_blind_combined")
     if red and red.get("value") is not None:

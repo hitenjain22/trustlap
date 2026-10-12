@@ -142,3 +142,21 @@ node scripts/demo-video.mjs http://localhost:4173 ~/Downloads/trustlap-demo.webm
 ```
 
 About 85 s at 1280×720: hero with rain rising, Training lab timeline, puddle test, black ice with the governor and a blind ghost, Results. The captions describe what's on screen, not outcomes. The video is not committed (~14 MB); upload it and link it from the README.
+
+## Replication run (3 training seeds, equal practice)
+
+Kaggle: import `sim/notebooks/train_full.ipynb` (it runs `scripts/replicate_pipeline.sh`), GPU T4, Save & Run All; download `trustlap_rep.zip` (~4–5 h). Then, from `sim/`:
+
+```bash
+mkdir -p runs/rep_import && cd runs/rep_import && unzip -q ~/Downloads/trustlap_rep.zip && cd ../..
+mv runs/rep_import/rep runs/rep && rmdir runs/rep_import
+python -m trustlap.export --policy blind=runs/rep/seed1/blind/final.msgpack \
+    --policy teacher=runs/rep/seed1/teacher/final.msgpack \
+    --students runs/rep/seed1/students/students.msgpack --teacher runs/rep/seed1/teacher/final.msgpack \
+    --teacher-run runs/rep/seed1/teacher --blind-run runs/rep/seed1/blind \
+    --metrics runs/rep/metrics_partial.json --train-hardware "NVIDIA T4 GPU (Kaggle)" \
+    --golden --closed-loop blind
+cd ../web && npm test && npm run build && npm run test:e2e
+```
+
+Seed 1 is published (networks, charts); `metrics.json → replication` holds every seed's verdicts.

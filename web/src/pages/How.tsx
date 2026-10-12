@@ -15,6 +15,7 @@ import {
 } from '../data/artifacts.ts'
 import type { Metrics } from '../data/schemas.ts'
 import type { SimConfig } from '../sim/config.ts'
+import { accent, STEP_ACCENTS } from '../styles/accents.ts'
 
 const H = strings.how
 const STEPS = H.steps
@@ -105,16 +106,17 @@ export default function How() {
               type="button"
               aria-current={i === step ? 'step' : undefined}
               onClick={() => go(i)}
-              className={`flex min-h-12 w-full items-center gap-2 rounded-control border px-3 text-left text-[14px] font-[560] transition-colors ${
-                i === step
-                  ? 'border-sodium bg-asphalt-800 text-paint'
-                  : 'border-line text-text-2 hover:text-paint'
+              style={accent(STEP_ACCENTS[i]!)}
+              className={`card flex min-h-12 w-full items-center gap-2 px-3 text-left text-[14px] font-[560] transition-[border-color,color,transform] duration-150 hover:-translate-y-px ${
+                i === step ? 'card--selected text-paint' : 'text-text-2 hover:text-paint'
               }`}
             >
               <span
-                className={`grid size-6 shrink-0 place-items-center rounded-full text-[12px] ${
-                  i === step ? 'bg-sodium text-sodium-ink' : 'bg-asphalt-700 text-text-2'
-                }`}
+                className="grid size-6 shrink-0 place-items-center rounded-full text-[12px] font-[650]"
+                style={{
+                  background: i === step ? STEP_ACCENTS[i] : 'var(--asphalt-700)',
+                  color: i === step ? 'var(--sodium-ink)' : 'var(--text-2)',
+                }}
               >
                 {i + 1}
               </span>
@@ -125,10 +127,11 @@ export default function How() {
       </ol>
 
       <section
-        className="mt-8 rounded-panel border border-line bg-asphalt-800 p-6 md:p-8"
+        className="card card--accent mt-8 p-6 md:p-8"
+        style={accent(STEP_ACCENTS[step]!)}
         aria-live="polite"
       >
-        <p className="label">{`Step ${step + 1} of ${STEPS.length}`}</p>
+        <p className="eyebrow">{`Step ${step + 1} of ${STEPS.length}`}</p>
         <h2 className="mt-2 text-[28px] leading-tight font-bold text-paint">{s.title}</h2>
         <div className="mt-4 grid gap-8 md:grid-cols-[1fr_260px]">
           <div className="flex max-w-[62ch] flex-col gap-3 text-[16px] text-text-2">
@@ -183,18 +186,14 @@ export default function How() {
 
         {step < STEPS.length - 1 && (
           <div className="mt-8">
-            <button
-              type="button"
-              className="inline-flex min-h-11 items-center rounded-control bg-sodium px-4 text-[15px] font-[650] text-sodium-ink hover:bg-[#f5c35f]"
-              onClick={() => go(step + 1)}
-            >
+            <button type="button" className="btn-primary" onClick={() => go(step + 1)}>
               {H.next}: {STEPS[step + 1]!.tab}
             </button>
           </div>
         )}
       </section>
 
-      <details className="group mt-12 rounded-panel border border-line">
+      <details className="card group mt-12">
         <summary className="cursor-pointer list-none px-5 py-4 text-[18px] font-[620] text-paint">
           {H.moreTitle}
         </summary>

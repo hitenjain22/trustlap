@@ -39,3 +39,39 @@ export function PlayIcon({ playing }: { playing: boolean }) {
     </svg>
   )
 }
+
+/** Line icons for the steps and scenarios (20 px, currentColor, decorative). */
+const PATHS: Record<string, string> = {
+  world:
+    'M10 2a8 8 0 1 0 0 16a8 8 0 0 0 0-16M2.5 10h15M10 2.5c2.2 2.1 3.2 4.6 3.2 7.5s-1 5.4-3.2 7.5M10 2.5C7.8 4.6 6.8 7.1 6.8 10s1 5.4 3.2 7.5',
+  practise:
+    'M3.5 10a6.5 6.5 0 0 1 11.3-4.4M16.5 10a6.5 6.5 0 0 1-11.3 4.4M15 2.5v3.6h-3.6M5 17.5v-3.6h3.6',
+  grip: 'M2.5 7c2.5-2 5-2 7.5 0s5 2 7.5 0M2.5 12c2.5-2 5-2 7.5 0s5 2 7.5 0',
+  unsure: 'M3 14a7 7 0 1 1 14 0M10 14l3.5-4.5M2.5 14h2M15.5 14h2',
+  test: 'M4.5 17.5V3M4.5 3.5h10l-2 3.5 2 3.5h-10',
+  dry: 'M10 6.5a3.5 3.5 0 1 0 0 7a3.5 3.5 0 0 0 0-7M10 2v1.8M10 16.2V18M2 10h1.8M16.2 10H18M4.3 4.3l1.3 1.3M14.4 14.4l1.3 1.3M15.7 4.3l-1.3 1.3M5.6 14.4l-1.3 1.3',
+  monsoon:
+    'M5.5 12.5a3.5 3.5 0 0 1 .7-6.9a5 5 0 0 1 9.4 1.6a2.8 2.8 0 0 1-.6 5.3M7 15l-1 2.5M10.5 15l-1 2.5M14 15l-1 2.5',
+  ice: 'M10 2v16M3.1 6l13.8 8M3.1 14l13.8-8M8 3.5l2 2 2-2M8 16.5l2-2 2 2',
+  broken: 'M13.5 3a4 4 0 0 0-4.8 5.3L3 14l3 3 5.7-5.7A4 4 0 0 0 17 6.5l-2.4 2.4-2.4-.7-.7-2.4z',
+  chaos: 'M11 2L4 11h5l-1 7 7-9h-5z',
+  puddle: 'M10 2.5s-5 5.6-5 9a5 5 0 0 0 10 0c0-3.4-5-9-5-9',
+}
+
+export function LineIcon({ name }: { name: keyof typeof PATHS | string }) {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 20 20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d={PATHS[name] ?? ''} />
+    </svg>
+  )
+}

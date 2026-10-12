@@ -318,7 +318,24 @@ export class Renderer {
       drawLabels(ctx, this.poses, this.labels, cam, this.pal, dpr)
     }
 
+    // Rain falls only over the track's side of the canvas, not behind overlaid text (hero), with
+    // a soft fade at the edge.
+    const inset = Math.min(w * 0.45, (this.opts.fitInsetLeft?.() ?? 0) * dpr)
+    if (inset > 0) {
+      ctx.save()
+      ctx.beginPath()
+      ctx.rect(inset, 0, w - inset, h)
+      ctx.clip()
+    }
     this.rainLayer.draw(ctx, this.rain, this.windX, motion ? Math.min(dt, 50) : 0, this.pal)
+    if (inset > 0) {
+      const fade = ctx.createLinearGradient(inset, 0, inset + 48 * dpr, 0)
+      fade.addColorStop(0, this.pal.runoff)
+      fade.addColorStop(1, withAlpha(this.pal.runoff, 0))
+      ctx.fillStyle = fade
+      ctx.fillRect(inset, 0, 48 * dpr, h)
+      ctx.restore()
+    }
   }
 
   /** North-up camera (3× the overview zoom, or closer on big tracks), following `car` with critically damped smoothing. */

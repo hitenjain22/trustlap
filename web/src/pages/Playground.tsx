@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '../components/Button.tsx'
-import { DiceIcon, PlayIcon } from '../components/icons.tsx'
+import { DiceIcon, LineIcon, PlayIcon } from '../components/icons.tsx'
 import { LiveCanvas } from '../components/LiveCanvas.tsx'
 import { TelemetryPanel, TelemetryStrip } from '../components/TelemetryPanel.tsx'
 import { PuddleTestPanel } from '../components/PuddleTestPanel.tsx'
+import { Tip } from '../components/Tip.tsx'
+import { accent, SCENARIO_ACCENTS } from '../styles/accents.ts'
 import { TrackDrawer } from '../components/TrackDrawer.tsx'
 import { Slider } from '../components/Slider.tsx'
 import { strings } from '../copy/strings.ts'
@@ -236,6 +238,7 @@ export default function Playground() {
   // The worker's counts restart whenever the cars are re-placed, so those actions reset this.
   const [crashSeen, setCrashSeen] = useState(0)
   const [camera, setCamera] = useState<'overview' | 'chase'>('overview')
+  const [scenario, setScenario] = useState<string | null>(null)
   // Phones (SPEC 10.2 mobile): canvas first, a telemetry strip, conditions in a bottom sheet.
   const phone = useMediaQuery('(max-width: 767px)')
   const [sheetOpen, setSheetOpen] = useState(false)
@@ -328,6 +331,7 @@ export default function Playground() {
   )
 
   const set = (key: Key, value: number) => {
+    setScenario(null) // a hand-tuned condition is no longer that scenario
     setValues((v) => ({ ...v, [key]: value }))
     void sim.setConditions({ [key]: value })
   }
@@ -361,6 +365,7 @@ export default function Playground() {
   }
   const endPuddleTest = () => {
     setPuddleTest(false)
+    setScenario(null)
     setSpeed(1)
     void sim.setSpeed(1)
     if (!playing) {
@@ -576,7 +581,7 @@ export default function Playground() {
   // Scenarios: what to try first, each with what to watch for.
   const presetChips = (
     <div className="px-5 pt-4">
-      <p className="label">{strings.playground.scenariosTitle}</p>
+      <p className="eyebrow">{strings.playground.scenariosTitle}</p>
       <div
         className="mt-2 flex flex-col gap-2"
         role="group"
@@ -589,16 +594,24 @@ export default function Playground() {
             <button
               key={id}
               type="button"
+              aria-pressed={scenario === id}
               disabled={id === 'puddle' && !ready}
               onClick={() => {
                 if (preset) applyPreset(preset)
                 else runPuddleTest()
+                setScenario(id)
                 setSheetOpen(false)
               }}
-              className="rounded-control border border-line px-3 py-2 text-left hover:border-text-3 hover:bg-asphalt-700 disabled:opacity-45"
+              style={accent(SCENARIO_ACCENTS[id] ?? 'var(--sodium)')}
+              className={`card card--hover flex items-start gap-3 px-3 py-2.5 text-left disabled:opacity-45 ${scenario === id ? 'card--selected' : ''}`}
             >
-              <span className="block text-[14px] font-[620] text-paint">{sc.name}</span>
-              <span className="block text-[13px] text-text-3">{sc.watch}</span>
+              <span className="icon-badge mt-0.5">
+                <LineIcon name={id} />
+              </span>
+              <span>
+                <span className="block text-[14px] font-[620] text-paint">{sc.name}</span>
+                <span className="block text-[13px] text-text-3">{sc.watch}</span>
+              </span>
             </button>
           )
         })}
@@ -671,40 +684,44 @@ export default function Playground() {
           <span className="label">{strings.playground.driver}</span>
           <div className="segmented" role="group" aria-label={strings.playground.driver}>
             {DRIVER_ORDER.map((d) => (
-              <button
+              <Tip
                 key={d}
-                type="button"
-                aria-pressed={driver === d}
-                disabled={!available(d)}
-                title={available(d) ? undefined : strings.playground.notTrainedYet}
-                onClick={() => pickDriver(d)}
+                text={available(d) ? strings.drivers[d].what : strings.playground.notTrainedYet}
               >
-                <span className={`driver-swatch driver-swatch--${d}`} aria-hidden="true" />
-                {strings.playground.drivers[d]}
-              </button>
+                <button
+                  type="button"
+                  aria-pressed={driver === d}
+                  disabled={!available(d)}
+                  onClick={() => pickDriver(d)}
+                >
+                  <span className={`driver-swatch driver-swatch--${d}`} aria-hidden="true" />
+                  {strings.playground.drivers[d]}
+                </button>
+              </Tip>
             ))}
           </div>
           <span className="label">{strings.playground.ghosts}</span>
           <div className="flex flex-wrap gap-2" role="group" aria-label={strings.playground.ghosts}>
             {/* Every ghost is listed from the start (disabled until loaded) so the row doesn't jump. */}
             {DRIVER_ORDER.filter((d) => d !== driver).map((d) => (
-              <label
+              <Tip
                 key={d}
-                className={`chip ${available(d) ? '' : 'opacity-45'}`}
-                title={available(d) ? undefined : strings.playground.notTrainedYet}
+                text={available(d) ? strings.drivers[d].what : strings.playground.notTrainedYet}
               >
-                <input
-                  type="checkbox"
-                  checked={ghosts.includes(d)}
-                  disabled={!available(d)}
-                  onChange={() => toggleGhost(d)}
-                />
-                <span
-                  className={`driver-swatch driver-swatch--${d} driver-swatch--ghost`}
-                  aria-hidden="true"
-                />
-                {strings.playground.drivers[d]}
-              </label>
+                <label className={`chip ${available(d) ? '' : 'opacity-45'}`}>
+                  <input
+                    type="checkbox"
+                    checked={ghosts.includes(d)}
+                    disabled={!available(d)}
+                    onChange={() => toggleGhost(d)}
+                  />
+                  <span
+                    className={`driver-swatch driver-swatch--${d} driver-swatch--ghost`}
+                    aria-hidden="true"
+                  />
+                  {strings.playground.drivers[d]}
+                </label>
+              </Tip>
             ))}
           </div>
           <p className="w-full text-[13px] text-text-3">{strings.drivers[driver].what}</p>
@@ -787,7 +804,7 @@ export default function Playground() {
               </Button>
               {showKeys && (
                 <div
-                  className="absolute right-0 z-20 mt-2 w-64 rounded-panel border border-line bg-asphalt-800 p-4 text-[13px]"
+                  className="card absolute right-0 z-20 mt-2 w-64 p-4 text-[13px]"
                   role="dialog"
                   aria-label={strings.playground.shortcuts}
                 >
@@ -881,7 +898,7 @@ export default function Playground() {
       {crash && (
         <div
           role="status"
-          className="fixed bottom-6 left-1/2 z-30 max-md:bottom-16 flex w-[min(92vw,560px)] -translate-x-1/2 flex-wrap items-center gap-3 rounded-panel border border-line bg-asphalt-800 px-4 py-3 text-[14px] text-paint"
+          className="fixed bottom-6 left-1/2 z-30 max-md:bottom-16 flex w-[min(92vw,560px)] -translate-x-1/2 flex-wrap items-center gap-3 card px-4 py-3 text-[14px] text-paint shadow-[0_20px_50px_-20px_rgb(0_0_0/0.9)]"
         >
           <p className="min-w-0 flex-1">{crash}</p>
           <Button variant="primary" onClick={restartLap}>
@@ -895,7 +912,7 @@ export default function Playground() {
       {toast && !crash && (
         <div
           role="status"
-          className="fixed bottom-6 left-1/2 z-30 max-md:bottom-16 -translate-x-1/2 rounded-panel border border-line bg-asphalt-800 px-4 py-3 text-[14px] text-paint"
+          className="fixed bottom-6 left-1/2 z-30 max-md:bottom-16 -translate-x-1/2 card px-4 py-3 text-[14px] text-paint shadow-[0_20px_50px_-20px_rgb(0_0_0/0.9)]"
         >
           {toast}
         </div>

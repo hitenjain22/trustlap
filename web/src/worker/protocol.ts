@@ -143,8 +143,8 @@ export interface SimApi {
    * car, dry conditions otherwise. Null before init.
    */
   startPuddleTest(): Promise<TrackGeometry | null>
-  /** Re-place the cars with a new count and layout on the current track (slow-device fallback). */
-  setCarCount(nCars: number, layout: SimInit['layout']): Promise<void>
+  /** Slow-device fallback: keep only `nCars` cars, dropping the rest where they are. */
+  setCarCount(nCars: number): Promise<void>
   setConditions(values: Partial<ConditionValues>): Promise<number> // returns active puddles
   setDrivers(driver: DriverKind, ghosts: DriverKind[]): Promise<void>
   /** Training Lab: drive the "teacher" cars with a timeline checkpoint (checkpoints/<name>). */

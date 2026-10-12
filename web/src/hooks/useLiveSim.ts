@@ -166,7 +166,7 @@ export function useLiveSim(opts: LiveSimOptions) {
         renderer.degrade()
         const half = Math.max(1, Math.floor(o.nCars / 2))
         if (half === o.nCars) return // nothing to drop (e.g. the Playground's single car)
-        void api.setCarCount(half, 'spread').then(() => {
+        void api.setCarCount(half).then(() => {
           setStatus((s) => ({ ...s, cars: half, degraded: true }))
         })
       },

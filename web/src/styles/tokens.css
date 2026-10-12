@@ -1,20 +1,30 @@
-/* Design tokens (SPEC 11.2). "Wet asphalt at night under sodium lamps." Dark only for v1. */
+/* Design tokens (SPEC 11.2). "Wet asphalt at night under sodium lamps": a deep night-blue base,
+   warm sodium amber as the brand accent, and four cool/warm companions that each carry one idea
+   (grip/water, rain, AI/uncertainty, risk). Dark only for v1. */
 :root {
   color-scheme: dark;
-  /* surfaces */
-  --asphalt: #1c2127; /* page background */
-  --asphalt-800: #252b33; /* panels, nav, control rail */
-  --asphalt-700: #2f3640; /* hover, raised, chart gridlines */
-  --line: #3a424d; /* hairline borders, dividers */
-  --runoff: #181c21; /* off-track area on canvas */
-  --track: #2a3038; /* track surface on canvas */
+  /* surfaces, darkest → lightest */
+  --asphalt: #0e131c; /* page background */
+  --asphalt-800: #151c28; /* panels, nav, control rail */
+  --asphalt-700: #1e2735; /* hover, raised, chart gridlines */
+  --surface-3: #263145; /* popovers, tooltips */
+  --line: #2a3446; /* hairline borders, dividers */
+  --line-strong: #3b4861;
+  --runoff: #10161f; /* off-track area on canvas */
+  --track: #262f3e; /* track surface on canvas */
   /* text */
-  --paint: #e9edf0; /* primary text, track edge paint (13.8:1 on asphalt) */
-  --text-2: #aeb7bf; /* secondary (8.0:1) */
-  --text-3: #8a949d; /* muted, ≥ 4.5:1 on asphalt and panels */
-  /* accent */
-  --sodium: #f2b544; /* UI accent: primary buttons, links, focus ring (8.9:1) */
-  --sodium-ink: #1c2127; /* text on sodium */
+  --paint: #eef2f7; /* primary text, track edge paint */
+  --text-2: #adb8c7; /* secondary */
+  --text-3: #8894a7; /* muted, ≥ 4.5:1 on every surface above */
+  /* brand accent */
+  --sodium: #f6b84b; /* primary buttons, links, focus ring */
+  --sodium-2: #f08c3c; /* gradient partner for the primary button */
+  --sodium-ink: #1a1306; /* text on sodium */
+  /* companion accents: one idea each, used for UI tint and icons (never for data series) */
+  --teal: #38d1bd; /* grip, water, "feels the road" */
+  --sky: #63b3ff; /* rain, weather */
+  --violet: #a68cff; /* AI, uncertainty */
+  --coral: #ff7d8c; /* risk, cost, crashes */
   /* data: drivers (validated set, see SPEC 11.3) */
   --drv-student: #c98500;
   --drv-teacher: #9085e9;
@@ -26,12 +36,18 @@
   --grip-3: #6fa9da;
   --grip-4: #3f7fbf;
   --grip-5: #285a8f;
-  --rain: #9fc5e8; /* rain streaks (decorative, low opacity) */
+  --rain: #a7cdf0; /* rain streaks (decorative, low opacity) */
   /* scenery only, never data */
-  --kerb-red: #c8463c;
+  --kerb-red: #d24c42;
   /* status (reserved; always with icon + text) */
   --status-critical: #e5534b;
   --status-good: #3fae6a;
+
+  /* depth */
+  --shadow-card: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 12px 32px -20px rgb(0 0 0 / 0.9);
+  --glass: rgb(255 255 255 / 0.04);
+  --glass-hover: rgb(255 255 255 / 0.07);
+  --edge: rgb(255 255 255 / 0.08);
 
   /* motion (SPEC 11.8) */
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);

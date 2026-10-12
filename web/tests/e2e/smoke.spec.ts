@@ -166,3 +166,14 @@ test('lab and how it works lead with the simple view', async ({ page }) => {
   await page.getByRole('button', { name: /Next step/ }).click()
   await expect(page.getByRole('heading', { level: 2, name: 'Know when it’s unsure' })).toBeVisible()
 })
+
+test('playground: hovering or focusing a driver explains it', async ({ page }) => {
+  await page.goto('/playground')
+  const teacher = page.getByRole('button', { name: 'Teacher AI', exact: true })
+  await expect(teacher).toBeEnabled({ timeout: 15_000 })
+  await teacher.hover()
+  await expect(
+    page.getByRole('tooltip').filter({ hasText: 'told the true conditions' }),
+  ).toBeVisible()
+  await expect(teacher).toHaveAccessibleDescription(/told the true conditions/)
+})

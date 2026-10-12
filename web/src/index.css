@@ -8,6 +8,12 @@
   --color-asphalt: var(--asphalt);
   --color-asphalt-800: var(--asphalt-800);
   --color-asphalt-700: var(--asphalt-700);
+  --color-surface-3: var(--surface-3);
+  --color-line-strong: var(--line-strong);
+  --color-teal: var(--teal);
+  --color-sky: var(--sky);
+  --color-violet: var(--violet);
+  --color-coral: var(--coral);
   --color-line: var(--line);
   --color-runoff: var(--runoff);
   --color-track: var(--track);
@@ -30,6 +36,6 @@
   --color-status-critical: var(--status-critical);
   --color-status-good: var(--status-good);
 
-  --radius-control: 8px;
-  --radius-panel: 12px;
+  --radius-control: 10px;
+  --radius-panel: 16px;
 }

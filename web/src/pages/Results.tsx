@@ -11,6 +11,7 @@ import { strings } from '../copy/strings.ts'
 import { benchHeadline, loadBench, loadMetrics, type Bench } from '../data/artifacts.ts'
 import type { DriverSuite, Estimate, Metrics } from '../data/schemas.ts'
 import { CompareBars } from '../charts/CompareBars.tsx'
+import { accent } from '../styles/accents.ts'
 import {
   bestAiLaps,
   biggest,
@@ -29,10 +30,20 @@ const condName = (s: string) => strings.conditions[s as keyof typeof strings.con
 const list = (xs: string[]) =>
   xs.length <= 1 ? (xs[0] ?? '') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`
 
-function SummaryCard({ label, value, note }: { label: string; value: string; note: string }) {
+function SummaryCard({
+  label,
+  value,
+  note,
+  tint,
+}: {
+  label: string
+  value: string
+  note: string
+  tint: string
+}) {
   return (
-    <div className="rounded-panel border border-line bg-asphalt-800 p-5">
-      <p className="label">{label}</p>
+    <div className="card card--accent p-5" style={accent(tint)}>
+      <p className="eyebrow">{label}</p>
       <p className="numeral mt-2 text-[30px] leading-tight text-paint">{value}</p>
       <p className="mt-2 text-[14px] text-text-2">{note}</p>
     </div>
@@ -92,7 +103,7 @@ function table(
 
 function StatTile({ label, value, note }: { label: string; value: string | null; note: string }) {
   return (
-    <div className="rounded-panel border border-line bg-asphalt-800 p-5">
+    <div className="card p-5">
       <p className="label">{label}</p>
       <p className="numeral mt-2 text-[36px] leading-none text-paint">{value ?? '–'}</p>
       <p className="mt-2 text-[13px] text-text-2">{value === null ? S.notComputed : note}</p>
@@ -311,7 +322,7 @@ export default function Results() {
   ].filter((t): t is string => t !== null)
   return (
     <div className="mx-auto max-w-[1280px] px-4 py-12 md:px-6 md:py-16">
-      <p className="label">{S.title}</p>
+      <p className="eyebrow">{S.title}</p>
       <h1 className="mt-2 text-[40px] leading-[1.08] font-bold [font-stretch:118%] md:text-[49px]">
         {SS.question}
       </h1>
@@ -324,6 +335,7 @@ export default function Results() {
           <div className="mt-10 grid gap-4 md:grid-cols-3">
             {finite(red) && (
               <SummaryCard
+                tint="var(--violet)"
                 label={SS.cards.combinedLabel}
                 value={
                   red.value >= 0
@@ -345,6 +357,7 @@ export default function Results() {
             )}
             {gain && (
               <SummaryCard
+                tint="var(--teal)"
                 label={SS.cards.gainLabel(condName(gain.suite))}
                 value={`+${gain.adaptive - gain.basic} ${SS.cards.perHundred}`}
                 note={SS.cards.lapsNote(gain.adaptive, gain.basic)}
@@ -352,6 +365,7 @@ export default function Results() {
             )}
             {loss && (
               <SummaryCard
+                tint="var(--coral)"
                 label={SS.cards.lossLabel(condName(loss.suite))}
                 value={`−${loss.basic - loss.adaptive} ${SS.cards.perHundred}`}
                 note={SS.cards.lapsNote(loss.adaptive, loss.basic)}
@@ -386,7 +400,7 @@ export default function Results() {
         </>
       )}
 
-      <details className="group mt-16 rounded-panel border border-line">
+      <details className="card group mt-16">
         <summary className="cursor-pointer list-none px-5 py-4">
           <span className="text-[18px] font-[620] text-paint">{SS.fullTitle}</span>
           <span className="mt-1 block text-[14px] text-text-2">{SS.fullSummary}</span>

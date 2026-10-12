@@ -58,8 +58,14 @@
   text-decoration: none;
   border-radius: 8px;
 }
+.navlink {
+  transition:
+    color var(--dur-press) var(--ease),
+    background-color var(--dur-press) var(--ease);
+}
 .navlink:hover {
   color: var(--paint);
+  background: var(--glass);
 }
 .navlink.active {
   color: var(--paint);
@@ -69,9 +75,10 @@
   position: absolute;
   left: 12px;
   right: 12px;
-  bottom: 6px;
+  bottom: 5px;
   height: 2px;
-  background: var(--sodium);
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--sodium), var(--sodium-2));
 }
 
 /* Thin loading line under the nav (never a spinner over the canvas). */
@@ -104,25 +111,34 @@
   display: inline-flex;
   min-height: 44px;
   align-items: center;
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 0 18px;
-  background: var(--sodium);
+  background: linear-gradient(180deg, #f9c766, var(--sodium) 55%, var(--sodium-2));
   color: var(--sodium-ink);
   font-size: 15px;
   font-weight: 650;
   text-decoration: none;
-  transition: background-color var(--dur-press) var(--ease);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.35),
+    0 10px 24px -12px rgb(246 184 75 / 0.75);
+  transition:
+    transform var(--dur-press) var(--ease),
+    filter var(--dur-press) var(--ease);
 }
 .btn-primary:hover {
-  background: #f5c35f;
+  filter: brightness(1.06);
+}
+.btn-primary:active {
+  transform: translateY(1px) scale(0.99);
 }
 
 .segmented {
   display: inline-flex;
-  border: 1px solid var(--line);
+  border: 1px solid var(--edge);
   border-radius: 999px;
-  padding: 2px;
-  background: var(--asphalt);
+  padding: 3px;
+  background: rgb(0 0 0 / 0.25);
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.35);
 }
 .segmented button {
   min-height: 36px;
@@ -133,9 +149,21 @@
   font-weight: 560;
   color: var(--text-2);
 }
-.segmented button[aria-pressed='true'] {
-  background: var(--asphalt-700);
+.segmented button {
+  transition:
+    color var(--dur-press) var(--ease),
+    background-color var(--dur-press) var(--ease),
+    box-shadow var(--dur-press) var(--ease);
+}
+.segmented button:hover:not(:disabled) {
   color: var(--paint);
+}
+.segmented button[aria-pressed='true'] {
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.13), rgb(255 255 255 / 0.06));
+  color: var(--paint);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.12),
+    0 2px 8px -2px rgb(0 0 0 / 0.6);
 }
 .segmented button:disabled {
   color: var(--text-3);
@@ -144,9 +172,10 @@
 
 .select {
   min-height: 40px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--asphalt-800);
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  background: var(--glass);
+  transition: border-color var(--dur-press) var(--ease);
   color: var(--paint);
   padding: 0 10px;
   font-size: 15px;
@@ -167,15 +196,22 @@
   height: 4px;
   margin-top: -2px;
   border-radius: 2px;
-  background: var(--asphalt-700);
+  /* Filled up to the value (--fill is set inline by the component). */
+  background: linear-gradient(
+    90deg,
+    var(--sodium) 0,
+    var(--sodium-2) var(--fill, 0%),
+    var(--asphalt-700) var(--fill, 0%)
+  );
 }
 .slider__band {
   position: absolute;
   top: 50%;
-  height: 8px;
-  margin-top: -4px;
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--grip-4) 45%, transparent);
+  height: 10px;
+  margin-top: -5px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--teal) 22%, transparent);
+  border: 1px solid color-mix(in srgb, var(--teal) 45%, transparent);
 }
 .slider input[type='range'] {
   position: relative;
@@ -203,6 +239,14 @@
   background: var(--paint);
   border: 3px solid var(--asphalt);
   box-sizing: content-box;
+  box-shadow:
+    0 0 0 1px rgb(246 184 75 / 0.6),
+    0 2px 8px rgb(0 0 0 / 0.5);
+  transition: transform var(--dur-press) var(--ease);
+}
+.slider input[type='range']:hover::-webkit-slider-thumb,
+.slider input[type='range']:active::-webkit-slider-thumb {
+  transform: scale(1.15);
 }
 .slider input[type='range']::-moz-range-thumb {
   width: 18px;
@@ -277,14 +321,170 @@ details[open] > summary::after {
   min-height: 36px;
   align-items: center;
   gap: 4px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--edge);
   border-radius: 999px;
   padding: 0 12px;
   font-size: 14px;
   color: var(--text-2);
+  background: var(--glass);
   cursor: pointer;
+  transition:
+    color var(--dur-press) var(--ease),
+    background-color var(--dur-press) var(--ease),
+    border-color var(--dur-press) var(--ease);
+}
+.chip:hover {
+  color: var(--paint);
+  background: var(--glass-hover);
+}
+.chip:has(input:checked) {
+  color: var(--paint);
+  border-color: color-mix(in srgb, var(--sodium) 55%, transparent);
+  background: color-mix(in srgb, var(--sodium) 10%, transparent);
 }
 .chip input {
   accent-color: var(--sodium);
   margin-right: 4px;
+}
+
+/* Tooltip (components/Tip.tsx): appears on hover or keyboard focus. */
+.tip-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.tip {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  z-index: 40;
+  width: max-content;
+  max-width: 260px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface-3);
+  box-shadow: 0 12px 32px -12px rgb(0 0 0 / 0.7);
+  color: var(--paint);
+  font-size: 13px;
+  font-weight: 450;
+  line-height: 1.45;
+  text-align: left;
+  pointer-events: none;
+  /* Out of the layout until shown, so it never widens the page near an edge. */
+  display: none;
+  transform: translate(-50%, 0);
+}
+@keyframes tip-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 4px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+.tip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  margin-left: -5px;
+  border: 5px solid transparent;
+  border-top-color: var(--surface-3);
+}
+.tip-wrap:hover .tip,
+.tip-wrap:focus-within .tip {
+  display: block;
+  animation: tip-in 160ms var(--ease) 120ms both;
+}
+@media (hover: none) {
+  /* Touch screens: no hover, and a tooltip stuck open after a tap only gets in the way. */
+  .tip-wrap:hover .tip {
+    display: none;
+  }
+}
+
+/* Cards: layered surface with a light top edge; --accent tints hover and the top bar. */
+.card {
+  border-radius: 16px;
+  border: 1px solid var(--edge);
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 0.035), rgb(255 255 255 / 0.008)), var(--asphalt-800);
+  box-shadow: var(--shadow-card);
+}
+.card--accent {
+  position: relative;
+  overflow: hidden;
+}
+.card--accent::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent, var(--sodium)), transparent 85%);
+}
+.card--hover {
+  transition:
+    transform 180ms var(--ease),
+    border-color 180ms var(--ease),
+    box-shadow 180ms var(--ease);
+}
+.card--hover:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--accent, var(--sodium)) 45%, transparent);
+  box-shadow:
+    var(--shadow-card),
+    0 18px 40px -22px color-mix(in srgb, var(--accent, var(--sodium)) 70%, transparent);
+}
+.card--selected {
+  border-color: color-mix(in srgb, var(--accent, var(--sodium)) 70%, transparent);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--accent, var(--sodium)) 14%, transparent),
+      rgb(255 255 255 / 0.01)
+    ),
+    var(--asphalt-800);
+}
+
+/* Small colored label above a heading. */
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent, var(--sodium));
+}
+.eyebrow::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 10px currentColor;
+}
+
+/* Round icon badge in an accent color. */
+.icon-badge {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  color: var(--accent, var(--sodium));
+  background: color-mix(in srgb, var(--accent, var(--sodium)) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent, var(--sodium)) 30%, transparent);
+}
+
+/* Gradient text for one highlighted phrase per page. */
+.text-gradient {
+  background: linear-gradient(95deg, var(--sky), var(--teal) 60%, var(--sodium));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }

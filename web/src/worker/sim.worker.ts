@@ -568,9 +568,18 @@ const api: SimApi = {
     placeCars()
     return geo
   },
-  async setCarCount(nCars, layout) {
-    opts = { ...opts, nCars, layout }
-    if (ready) placeCars()
+  async setCarCount(nCars) {
+    // Drop cars where they are (every second one, from the back) instead of re-placing the
+    // field: re-placing made the whole grid jump to a new layout mid-race.
+    opts = { ...opts, nCars }
+    if (!ready) return
+    let kept = 0
+    drivers = drivers.filter((d, i) => {
+      if (d.ghost) return true
+      const keep = i % 2 === 0 && kept < nCars
+      if (keep) kept++
+      return keep
+    })
   },
   async startPuddleTest() {
     if (!ready) return null

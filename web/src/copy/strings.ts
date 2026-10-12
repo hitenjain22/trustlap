@@ -60,6 +60,8 @@ export const strings = {
   },
   hero: {
     headline: 'These cars taught themselves to drive in the rain.',
+    headlineLead: 'These cars taught themselves to drive',
+    headlineAccent: 'in the rain.',
     // Honest for M3: the cars run the "blind" driver, which learned by trial and error but has
     // no grip sense yet (that's the Adaptive AI, M5).
     body: 'Every car here is a neural network running in your browser. It learned to drive by trial and error, through rain, wind and worn tires. Turn up the rain and watch how it copes.',

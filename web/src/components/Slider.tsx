@@ -60,7 +60,7 @@ export function Slider({
           {hint}
         </p>
       )}
-      <div className="slider__track">
+      <div className="slider__track" style={{ '--fill': `${pct(value)}%` } as React.CSSProperties}>
         {band && <span className="slider__band" style={band} aria-hidden="true" />}
         <input
           id={id}

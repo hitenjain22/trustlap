@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { Button } from '../components/Button.tsx'
-import { DiceIcon } from '../components/icons.tsx'
+import { DiceIcon, LineIcon } from '../components/icons.tsx'
+import { accent, STEP_ACCENTS, STEP_ICONS } from '../styles/accents.ts'
 import { LiveCanvas } from '../components/LiveCanvas.tsx'
 import { Slider } from '../components/Slider.tsx'
 import { REPO_URL, strings } from '../copy/strings.ts'
@@ -78,9 +79,12 @@ export default function Home() {
         />
         <div
           ref={panelRef}
-          className="relative mx-4 -mt-10 mb-6 max-w-[560px] rounded-panel border border-line bg-asphalt/85 p-6 md:absolute md:bottom-8 md:left-[max(24px,calc((100vw-1280px)/2+24px))] md:m-0 md:bg-asphalt/80"
+          className="relative mx-4 -mt-10 mb-6 max-w-[560px] rounded-panel border border-[var(--edge)] bg-asphalt/85 p-6 shadow-[inset_0_1px_0_rgb(255_255_255/0.05),0_30px_60px_-30px_rgb(0_0_0/0.9)] md:absolute md:bottom-8 md:left-[max(24px,calc((100vw-1280px)/2+24px))] md:m-0 md:bg-asphalt/80"
         >
-          <h1 className="display">{strings.hero.headline}</h1>
+          <h1 className="display">
+            {strings.hero.headlineLead}{' '}
+            <span className="text-gradient">{strings.hero.headlineAccent}</span>
+          </h1>
           <p className="mt-4 text-text-2">{strings.hero.body}</p>
           <div className="mt-6 flex items-end gap-4">
             <div className="flex-1">
@@ -148,24 +152,32 @@ function Story() {
       <p className="mt-3 max-w-[68ch] text-text-2">{strings.story.intro}</p>
       <ol className="mt-10 grid gap-4 md:grid-cols-5">
         {H.steps.map((step, i) => (
-          <li key={step.tab} className="flex flex-col rounded-panel border border-line p-5">
-            <span className="grid size-7 place-items-center rounded-full bg-asphalt-700 text-[13px] text-paint">
-              {i + 1}
-            </span>
-            <h3 className="mt-3 text-[17px] font-[620] text-paint">{step.title}</h3>
-            <p className="mt-2 flex-1 text-[14px] text-text-2">{step.summary}</p>
+          <li key={step.tab} className="flex">
             <Link
               to={`/how-it-works#step-${i + 1}`}
-              className="mt-4 text-[14px] text-sodium underline"
+              className="card card--hover card--accent flex flex-1 flex-col p-5 no-underline"
+              style={accent(STEP_ACCENTS[i]!)}
             >
-              {strings.story.readStep(i + 1)}
+              <span className="flex items-center gap-3">
+                <span className="icon-badge">
+                  <LineIcon name={STEP_ICONS[i]!} />
+                </span>
+                <span className="text-[13px] font-[600] text-text-3">{`Step ${i + 1}`}</span>
+              </span>
+              <span className="mt-4 text-[17px] leading-snug font-[620] text-paint">
+                {step.title}
+              </span>
+              <span className="mt-2 flex-1 text-[14px] text-text-2">{step.summary}</span>
+              <span className="mt-4 text-[14px] font-[560]" style={{ color: STEP_ACCENTS[i] }}>
+                {strings.story.readStep(i + 1)} →
+              </span>
             </Link>
           </li>
         ))}
       </ol>
       {rows.length > 0 && (
-        <div className="mt-10 rounded-panel border border-line bg-asphalt-800 p-6">
-          <h3 className="h3">{strings.story.answerTitle}</h3>
+        <div className="card card--accent mt-10 p-6" style={accent('var(--teal)')}>
+          <h3 className="eyebrow">{strings.story.answerTitle}</h3>
           <p className="mt-2 max-w-[72ch] text-text-2">
             {strings.story.answerLead}{' '}
             {better.length > 0 && strings.story.answerBetter(better.join(', '))}{' '}

@@ -82,7 +82,7 @@ function WatchItLearn({ checkpoints }: { checkpoints: Checkpoints['checkpoints']
         canvasRef={sim.canvasRef}
         phase={sim.status.phase}
         label={L.watch.canvasLabel(millions(c.env_steps))}
-        className="aspect-[4/3] w-full rounded-panel border border-line lg:aspect-[16/10]"
+        className="aspect-[4/3] w-full overflow-hidden rounded-panel border border-[var(--edge)] lg:aspect-[16/10]"
       />
       <div>
         <h2 id="watch" className="h2">
@@ -356,7 +356,7 @@ export default function Lab() {
           </section>
         )}
 
-        <details className="group rounded-panel border border-line">
+        <details className="card group">
           <summary className="cursor-pointer list-none px-5 py-4">
             <span className="text-[18px] font-[620] text-paint">{L.simple.fullTitle}</span>
             <span className="mt-1 block text-[14px] text-text-2">

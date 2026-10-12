@@ -133,3 +133,12 @@ Filled in at M6.
 cd web && npm run build && npm run preview &        # http://localhost:4173
 node scripts/readme-gif.mjs http://localhost:4173 ../docs/media/hero.gif   # needs uv (uvx) for Pillow
 ```
+
+## Demo video
+
+```bash
+cd web && npm run build && npm run preview &        # http://localhost:4173
+node scripts/demo-video.mjs http://localhost:4173 ~/Downloads/trustlap-demo.webm
+```
+
+About 85 s at 1280×720: hero with rain rising, Training lab timeline, puddle test, black ice with the governor and a blind ghost, Results. The captions describe what's on screen, not outcomes. The video is not committed (~14 MB); upload it and link it from the README.

@@ -93,6 +93,7 @@ interface Driver {
   forces: Float32Array
   lastPuddleStep: number // last step with an axle in a puddle (grip field < 0.85)
   crashSpeed: number
+  spinStartSpeed: number // speed when the current spin began (the car is slow by the time it counts)
   crashCause: number
   crashCount: number
 }
@@ -317,6 +318,7 @@ function placeCars(): void {
       forces: new Float32Array(4),
       lastPuddleStep: -1e9,
       crashSpeed: NaN,
+      spinStartSpeed: NaN,
       crashCause: 0,
       crashCount: 0,
       ...scales,
@@ -423,8 +425,10 @@ function step(): void {
     const gx = gusty ? rng.nextNormal() : 0
     const gy = gusty ? rng.nextNormal() : 0
     const speedBefore = Math.hypot(d.state.car.vxMps, d.state.car.vyMps)
+    const spinningBefore = d.state.spinSteps > 0
     coreStep(d.state, action[0]!, action[1]!, gx, gy, track, cfg, info)
     d.forces.set(lastTireForces)
+    if (d.state.spinSteps > 0 && !spinningBefore) d.spinStartSpeed = speedBefore
     if (Math.min(...axlePuddle(d.state)) < PUDDLE_FIELD) d.lastPuddleStep = simStep
     d.lastAction[0] = d.state.prevAction[0]!
     d.lastAction[1] = d.state.prevAction[1]!
@@ -440,7 +444,10 @@ function step(): void {
       d.respawnIn = RESPAWN_STEPS
       if (!d.ghost) crashes++
       d.crashCount++
-      d.crashSpeed = speedBefore
+      d.crashSpeed =
+        !info.stalled && d.state.spinSteps > 0 && Number.isFinite(d.spinStartSpeed)
+          ? d.spinStartSpeed
+          : speedBefore
       d.crashCause =
         (simStep - d.lastPuddleStep <= PUDDLE_MEMORY_STEPS ? CrashCause.Puddle : 0) |
         (Math.abs(curvatureAt(track, d.state.sM)) > 1 / CORNER_RADIUS_M ? CrashCause.Corner : 0) |

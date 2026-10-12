@@ -37,3 +37,4 @@ web/playwright/.cache/
 
 # Logs
 *.log
+web/demo-video-tmp/

@@ -30,7 +30,7 @@ export const CarField = {
   FyFront: 18,
   FxRear: 19,
   FyRear: 20,
-  CrashSpeed: 21, // speed at the most recent crash (m/s), NaN before the first
+  CrashSpeed: 21, // m/s when it went wrong: leaving the track, or the start of a spin; NaN before
   CrashCause: 22, // bit flags, see CrashCause
   Crashes: 23, // this car's crash count
 } as const

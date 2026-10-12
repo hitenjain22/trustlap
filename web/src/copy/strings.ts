@@ -1,6 +1,14 @@
 /** All user-facing strings live here (SPEC 11.11). */
 export const strings = {
   wordmark: 'TrustLap',
+  /** Matches index.html's <title> (used on the home page). */
+  siteTitle: 'TrustLap: AI cars that teach themselves to drive in the rain',
+  pageTitles: {
+    '/playground': 'Playground',
+    '/lab': 'Training lab',
+    '/results': 'Results',
+    '/how-it-works': 'How it works',
+  },
   nav: {
     playground: 'Playground',
     lab: 'Training lab',
@@ -550,3 +558,4 @@ npm ci && npm run dev`,
 } as const
 
 export const REPO_URL = 'https://github.com/hitenjain22/trustlap'
+export const SITE_URL = 'https://trustlap.vercel.app'

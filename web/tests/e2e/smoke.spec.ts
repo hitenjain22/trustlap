@@ -129,6 +129,15 @@ test('playground: the puddle test drives into a puddle and scores the result', a
   await expect(page.getByRole('heading', { name: 'Puddle test' })).toHaveCount(0)
 })
 
+test('each page sets its own title and canonical URL', async ({ page }) => {
+  await page.goto('/results')
+  await expect(page).toHaveTitle('Results · TrustLap')
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
+    'href',
+    'https://trustlap.vercel.app/results',
+  )
+})
+
 test('unknown routes show the not-found page via the SPA fallback', async ({ page }) => {
   await page.goto('/no-such-page')
   await expect(page.getByRole('heading', { level: 1 })).toContainText('drove off the track')

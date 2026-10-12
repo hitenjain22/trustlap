@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router'
 import { GitHubIcon } from './components/icons.tsx'
-import { REPO_URL, strings } from './copy/strings.ts'
+import { REPO_URL, SITE_URL, strings } from './copy/strings.ts'
 import { ARTIFACT_VERSION } from './data/artifacts.ts'
 import { useUi } from './state/store.ts'
 
@@ -16,6 +16,15 @@ export default function App() {
     setMenuPath(location.pathname)
     setMenuOpen(false)
   }
+  // Per-page title and canonical URL (the static index.html points everything at "/").
+  useEffect(() => {
+    const path = location.pathname
+    const name = strings.pageTitles[path as keyof typeof strings.pageTitles]
+    document.title = name ? `${name} · ${strings.wordmark}` : strings.siteTitle
+    const url = `${SITE_URL}${path === '/' ? '/' : path}`
+    document.querySelector('link[rel="canonical"]')?.setAttribute('href', url)
+    document.querySelector('meta[property="og:url"]')?.setAttribute('content', url)
+  }, [location.pathname])
   useEffect(() => {
     if (!menuOpen) return
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setMenuOpen(false)

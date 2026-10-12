@@ -12,7 +12,6 @@ export interface Palette {
   drvTeacher: string
   drvBlind: string
   drvScripted: string
-  human: string // the visitor's own car (Race page): teal, outside the driver data palette
   skid: string
 }
 
@@ -32,7 +31,6 @@ export function readPalette(): Palette {
     drvTeacher: v('--drv-teacher', '#9085e9'),
     drvBlind: v('--drv-blind', '#d55181'),
     drvScripted: v('--drv-scripted', '#8a949d'),
-    human: v('--teal', '#38d1bd'),
     skid: '#0f1215',
   }
 }

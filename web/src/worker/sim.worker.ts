@@ -113,7 +113,6 @@ let governor = { on: false, tau: 0.2 }
 let pending: Partial<ConditionValues> = {} // changes that arrived before init
 let pendingTrack: number | null = null
 let customTrack: { points: Float64Array; widthM: number } | null = null
-const humanInput = new Float32Array(2) // the visitor's car (Race page)
 let puddleTest = false // cars start at 20 m/s at the stadium's s = 0
 let paused = false
 let simStep = 0
@@ -327,14 +326,8 @@ function placeCars(): void {
 }
 
 function respawn(d: Driver): void {
-  const progress = d.state.progressM
   resetEnvState(d.state, track, d.state.sM - RESPAWN_BACK_M, RESPAWN_SPEED_MPS)
-  if (opts.race) {
-    // Racing: the lap clock keeps running and the car carries on from 30 m back.
-    d.state.progressM = Math.max(0, progress - RESPAWN_BACK_M) // never "wrong way" near the start
-  } else {
-    d.lapStart = simStep // a crashed lap doesn't count; the next one starts now
-  }
+  d.lapStart = simStep // a crashed lap doesn't count; the next one starts now
 }
 
 /** Standard normals for the sensor-noise slider (AI drivers only); null when noise is off. */
@@ -409,10 +402,7 @@ function step(): void {
       if (d.respawnIn === 0) respawn(d)
       continue
     }
-    if (d.kind === 'human') {
-      action[0] = humanInput[0]!
-      action[1] = humanInput[1]!
-    } else if (d.kind === 'scripted') {
+    if (d.kind === 'scripted') {
       scriptedAction(d.state, track, cfg, action, d.scripted)
     } else {
       const b = slot.get(d) ?? -1
@@ -628,10 +618,6 @@ const api: SimApi = {
     setActivePuddles(shared, values.puddles)
     for (const d of drivers) applyValues(d.state.cond, d)
     return values.puddles
-  },
-  async setHumanInput(steer, long) {
-    humanInput[0] = Math.max(-1, Math.min(1, steer))
-    humanInput[1] = Math.max(-1, Math.min(1, long))
   },
   async setDrivers(driver, ghosts) {
     if (!ready) {

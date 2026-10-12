@@ -142,3 +142,14 @@ test('unknown routes show the not-found page via the SPA fallback', async ({ pag
   await page.goto('/no-such-page')
   await expect(page.getByRole('heading', { level: 1 })).toContainText('drove off the track')
 })
+
+test('results: the plain summary comes first, the full evaluation is folded', async ({ page }) => {
+  await page.goto('/results')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Does feeling the road help?')
+  await expect(page.getByRole('heading', { name: 'Laps finished in each condition' })).toBeVisible()
+  await expect(
+    page.getByText(/Clearly (better|worse) in:|No clear difference in:/).first(),
+  ).toBeVisible()
+  // The detailed charts are there but collapsed until asked for.
+  await expect(page.locator('details').first()).not.toHaveAttribute('open')
+})

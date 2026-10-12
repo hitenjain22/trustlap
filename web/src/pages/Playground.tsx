@@ -407,7 +407,7 @@ export default function Playground() {
     t && crashCount > crashSeen && Number.isFinite(t.crash.speedMps)
       ? strings.playground.crashToast({
           kmh: Math.round(t.crash.speedMps * 3.6),
-          driver: strings.playground.drivers[t.kind].toLowerCase(),
+          driver: strings.playground.drivers[t.kind],
           puddle: (t.crash.cause & CrashCause.Puddle) !== 0,
           corner: (t.crash.cause & CrashCause.Corner) !== 0,
           spun: (t.crash.cause & CrashCause.Spun) !== 0,

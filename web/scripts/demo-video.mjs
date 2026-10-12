@@ -79,11 +79,11 @@ await page.getByRole('button', { name: 'End the puddle test' }).click()
 await page.evaluate(() => window.scrollTo(0, 0))
 await page.getByText('Safety', { exact: true }).click()
 await page.getByRole('switch', { name: 'Safety governor' }).check()
-await page.getByRole('checkbox', { name: 'Blind' }).check() // the blind driver as a ghost
+await page.getByRole('checkbox', { name: 'Basic AI' }).check() // the Basic AI as a ghost
 await page.getByRole('button', { name: 'Chase' }).click()
 await page.getByRole('button', { name: 'Black ice' }).click()
 await page.evaluate(() => window.scrollTo(0, 0))
-await caption('Black ice, outside what it trained on, with the blind driver as a ghost.')
+await caption('Black ice, outside what it trained on, with the Basic AI as a ghost.')
 await wait(14000)
 
 // 5. Results (~10 s).

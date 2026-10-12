@@ -10,24 +10,24 @@ export const DRIVER_STYLE: Record<
     marker: 'circle' | 'square' | 'diamond' | 'triangle' | 'ring'
   }
 > = {
-  student: { color: 'var(--drv-student)', dash: '', label: 'Student (adaptive)', marker: 'circle' },
+  student: { color: 'var(--drv-student)', dash: '', label: 'Adaptive AI', marker: 'circle' },
   student_governed: {
     color: 'var(--drv-student)',
     dash: '2 3',
-    label: 'Student + safety governor',
+    label: 'Adaptive AI + safety governor',
     marker: 'ring',
   },
   teacher: {
     color: 'var(--drv-teacher)',
     dash: '2 4',
-    label: 'Teacher (knows conditions)',
+    label: 'Teacher AI (told the conditions)',
     marker: 'diamond',
   },
-  blind: { color: 'var(--drv-blind)', dash: '6 4', label: 'Blind', marker: 'square' },
+  blind: { color: 'var(--drv-blind)', dash: '6 4', label: 'Basic AI', marker: 'square' },
   scripted: {
     color: 'var(--drv-scripted)',
     dash: '10 4',
-    label: 'Scripted (knows grip)',
+    label: 'Rule-based (told the grip)',
     marker: 'triangle',
   },
 }

@@ -1,5 +1,46 @@
 /** All user-facing strings live here (SPEC 11.11). */
+/**
+ * The four drivers in plain words (internal ids stay student / blind / teacher / scripted).
+ * Used everywhere a visitor sees a driver: buttons, legends, tables, toasts.
+ */
+const DRIVERS = {
+  student: {
+    name: 'Adaptive AI',
+    what: 'Feels the road: estimates the grip under its tires from the last second of motion.',
+  },
+  blind: {
+    name: 'Basic AI',
+    what: 'Trained the same way, but can’t sense grip. The comparison point.',
+  },
+  teacher: {
+    name: 'Teacher AI',
+    what: 'Is told the true conditions. A training aid: a real car can’t know them.',
+  },
+  scripted: {
+    name: 'Rule-based driver',
+    what: 'Hand-written rules, given the exact grip. A reference, not AI.',
+  },
+} as const
+
+/** Evaluation conditions in plain words (metrics.json suite ids). */
+const CONDITIONS = {
+  dry: { name: 'Dry road', what: 'Nothing changed: the easy case' },
+  wet: { name: 'Rain', what: 'Less grip everywhere' },
+  puddles: { name: 'Puddles', what: 'Grip drops in patches' },
+  worn: { name: 'Worn tires', what: 'Grip fades as the lap goes on' },
+  wind: { name: 'Wind', what: 'Gusts push the car sideways' },
+  heavy: { name: 'Heavy car', what: 'More weight, less power' },
+  laggy: { name: 'Laggy steering', what: 'The wheel reacts late' },
+  combined: { name: 'Everything at once', what: 'All of the above together' },
+  ice: { name: 'Ice', what: 'Far less grip than it ever practised on' },
+  extreme_lag: { name: 'Extreme lag', what: 'Controls react very late' },
+  noisy_sensors: { name: 'Noisy sensors', what: 'Its readings are badly off' },
+  very_heavy: { name: 'Very heavy car', what: 'Heavier than it practised with' },
+} as const
+
 export const strings = {
+  drivers: DRIVERS,
+  conditions: CONDITIONS,
   wordmark: 'TrustLap',
   /** Matches index.html's <title> (used on the home page). */
   siteTitle: 'TrustLap: AI cars that teach themselves to drive in the rain',
@@ -20,7 +61,7 @@ export const strings = {
   hero: {
     headline: 'These cars taught themselves to drive in the rain.',
     // Honest for M3: the cars run the "blind" driver, which learned by trial and error but has
-    // no grip sense yet (that's the student, M5).
+    // no grip sense yet (that's the Adaptive AI, M5).
     body: 'Every car here is a neural network running in your browser. It learned to drive by trial and error, through rain, wind and worn tires. Turn up the rain and watch how it copes.',
     rain: 'Rain',
     newTrack: 'New track',
@@ -78,7 +119,12 @@ export const strings = {
     newTrack: 'New track',
     seed: (seed: number) => `Seed ${seed}`,
     driver: 'Driver',
-    drivers: { scripted: 'Scripted', student: 'Student', blind: 'Blind', teacher: 'Teacher' },
+    drivers: {
+      scripted: DRIVERS.scripted.name,
+      student: DRIVERS.student.name,
+      blind: DRIVERS.blind.name,
+      teacher: DRIVERS.teacher.name,
+    },
     ghosts: 'Ghosts',
     notTrainedYet: 'Not trained yet',
     canvasLabelLive: (driver: string) =>
@@ -100,7 +146,7 @@ export const strings = {
       ['D', 'Draw a track'],
       ['C', 'Switch camera (overview / chase)'],
       ['F', 'Show tire forces'],
-      ['1–4', 'Student, blind, teacher, scripted'],
+      ['1–4', 'Adaptive, Basic, Teacher, Rule-based'],
       ['?', 'Show these shortcuts'],
     ] as [string, string][],
     presets: 'Presets',
@@ -112,9 +158,9 @@ export const strings = {
       chaos: 'Everything at once',
     } as Record<string, string>,
     governorNote:
-      'Student only: eases off the throttle when its crash-risk estimate passes the threshold.',
+      'Adaptive AI only: eases off the throttle when its crash-risk estimate passes the threshold.',
     governorThreshold: 'Risk threshold',
-    canvasLabel: 'A self-taught car driving on the selected track, with a scripted ghost car.',
+    canvasLabel: 'A self-taught car driving on the selected track, with a ghost car.',
     drawTrack: 'Draw a track',
     crashes: 'Crashes',
     camera: 'Camera',
@@ -146,15 +192,15 @@ export const strings = {
     run: 'Run the puddle test',
     track: 'Puddle test straight',
     title: 'Puddle test',
-    body: 'The student drives down a long straight at half speed and crosses one puddle (grip × 0.4). Does its grip estimate drop while it’s on the puddle? Scored with the same rule as the evaluation.',
-    chartLabel: 'Rear grip since the test started: true grip and the student’s estimate.',
+    body: 'The Adaptive AI drives down a long straight at half speed and crosses one puddle (grip × 0.4). Does its grip estimate drop while it’s on the puddle? Scored with the same rule as the evaluation.',
+    chartLabel: 'Rear grip since the test started: true grip and the Adaptive AI’s estimate.',
     truth: 'True rear grip',
-    estimate: 'Student’s estimate',
+    estimate: 'Adaptive AI’s estimate',
     waiting: 'Driving toward the puddle…',
     noticed: (ms: number) => `Noticed the slippery patch in ${ms} ms.`,
     missed:
       'Didn’t notice the slippery patch: its estimate didn’t drop by half the true drop while it was on the puddle. That matches the evaluation (Results).',
-    noEstimate: 'This driver doesn’t estimate grip. The puddle test needs the student.',
+    noEstimate: 'This driver doesn’t estimate grip. The puddle test needs the Adaptive AI.',
     runAgain: 'Run again',
     end: 'End the puddle test',
   },
@@ -196,7 +242,7 @@ export const strings = {
     risk: 'Crash risk',
     slowsAbove: (pct: number) => `(slows above ${pct}%)`,
     governorOff: '(governor off)',
-    riskStudentOnly: 'Only the student ensemble estimates its crash risk.',
+    riskStudentOnly: 'Only the Adaptive AI estimates its crash risk.',
     sparkSpeed: 'Speed, last 10 s',
     sparkGrip: 'Rear grip: true vs estimate',
     sparkRisk: 'Crash risk',
@@ -349,7 +395,7 @@ npm ci && npm run dev`,
   lab: {
     title: 'Training lab',
     intro:
-      'How the teacher driver learned: a population trained side by side on one GPU, copying each other’s best ideas while the simulator made the world harder.',
+      'How the Teacher AI learned: a population trained side by side on one GPU, copying each other’s best ideas while the simulator made the world harder.',
     source:
       'From population_curves.json, lineage.json, curriculum.json and checkpoints/ · recorded during training',
     watch: {
@@ -411,6 +457,44 @@ npm ci && npm run dev`,
   },
   results: {
     title: 'Results',
+    simple: {
+      question: 'Does feeling the road help?',
+      intro: (tracks: number) =>
+        `We raced the Adaptive AI against the Basic AI on ${tracks} tracks neither had ever seen, in every condition. Same tracks, same weather, same starting grid: the only difference is that one can feel the grip.`,
+      unit: 'Laps finished, out of 100',
+      barLabel: (driver: string, laps: number) => `${driver}: ${laps} of 100 laps`,
+      verdict: {
+        better: 'Adaptive AI clearly better',
+        worse: 'Adaptive AI clearly worse',
+        same: 'No clear difference',
+      },
+      cards: {
+        combinedLabel: 'In the hardest mix',
+        fewer: (p: number) => `${p}% fewer crashes`,
+        more: (p: number) => `${p}% more crashes`,
+        combinedNote: (lo: number, hi: number) =>
+          `than the Basic AI with rain, wind, worn tires and lag all at once. 95% range: ${lo}% to ${hi}%.`,
+        gainLabel: (cond: string) => `Biggest gain: ${cond}`,
+        lossLabel: (cond: string) => `Biggest cost: ${cond}`,
+        lapsNote: (a: number, b: number) => `${a} vs ${b} laps finished out of 100.`,
+        perHundred: 'laps per 100',
+      },
+      chartTitle: 'Laps finished in each condition',
+      chartNote: (laps: number) =>
+        `Each condition was raced ${laps} times per driver. “Clearly” means the 95% range of the difference doesn’t include zero.`,
+      takeawaysTitle: 'What this means',
+      better: (list: string) => `Clearly better in: ${list}.`,
+      worse: (list: string) => `Clearly worse in: ${list}.`,
+      same: (list: string) => `No clear difference in: ${list}.`,
+      untrained: (list: string, best: number) =>
+        `In conditions it never practised (${list}), no AI driver finishes more than ${best} laps out of 100: learning only covers what it practised.`,
+      puddle: (of: number) =>
+        `It does not notice a single puddle while driving through it (0 of ${of} test runs). Its better results in the wet come from somewhere else, not yet pinned down.`,
+      risk: 'Its crash-risk estimate is honest on average (when it says 20%, about 20% of those moments end in a crash) but weak at telling risky moments from safe ones.',
+      fullTitle: 'Full evaluation',
+      fullSummary:
+        'Every chart and number, with 95% confidence intervals: all four drivers, lap times, untrained conditions, puddle response, risk calibration, the safety governor, the GPU benchmark.',
+    },
     intro: (tracks: number, seeds: number) =>
       `Every driver raced the same ${tracks} unseen test tracks under each condition, ${seeds} condition draws per track: ${tracks * seeds} laps per driver per condition. Ranges are 95% confidence intervals from a paired bootstrap over tracks.`,
     introMissing: 'The evaluation hasn’t been run for this build yet.',
@@ -422,16 +506,17 @@ npm ci && npm run dev`,
     benchSource: (date: string, sha: string) =>
       `From bench.json · measured ${date} · commit ${sha}`,
     tiles: {
-      crashReduction: 'Fewer crashes than the blind driver',
-      crashIncrease: 'More crashes than the blind driver',
-      crashReductionNote: 'Student vs blind, everything-at-once conditions',
-      teacherGap: 'Teacher gap left',
+      crashReduction: 'Fewer crashes than the Basic AI',
+      crashIncrease: 'More crashes than the Basic AI',
+      crashReductionNote: 'Adaptive vs Basic AI, everything-at-once conditions',
+      teacherGap: 'Gap to the Teacher AI',
       teacherGapUndefined:
-        'Not meaningful here: the teacher didn’t beat the blind driver in these conditions, so there was no gap to close.',
+        'Not meaningful here: the Teacher AI didn’t beat the Basic AI in these conditions, so there was no gap to close.',
       teacherGapNote:
-        'Share of the teacher’s advantage over the blind driver the student did not recover (0% = matches the teacher)',
+        'Share of the Teacher AI’s advantage over the Basic AI the Adaptive AI did not recover (0% = matches the Teacher AI)',
       gripMae: 'Grip estimate error',
-      gripMaeNote: 'Mean absolute error of the student’s grip estimate, training-range conditions',
+      gripMaeNote:
+        'Mean absolute error of the Adaptive AI’s grip estimate, training-range conditions',
       latency: 'Time to notice a puddle',
       latencyNote: (lo: number, hi: number) => `Median; middle half ${lo}–${hi} ms`,
       notNoticed: 'Not noticed',
@@ -449,18 +534,18 @@ npm ci && npm run dev`,
         neutral: 'Lap completion by condition',
         title: (wins: number, total: number) =>
           wins === total
-            ? `The adaptive student finishes at least as many laps as the blind driver in every condition`
-            : `The adaptive student finishes more laps than the blind driver in ${wins} of ${total} conditions`,
+            ? `The Adaptive AI finishes at least as many laps as the Basic AI in every condition`
+            : `The Adaptive AI finishes more laps than the Basic AI in ${wins} of ${total} conditions`,
         subtitle:
-          'Lap completion rate by condition (unseen test tracks), sorted by the student’s advantage over the blind driver.',
+          'Lap completion rate by condition (unseen test tracks), sorted by the Adaptive AI’s advantage over the Basic AI.',
         axis: 'Laps completed',
       },
       delta: {
-        neutral: 'Student vs blind, paired difference',
+        neutral: 'Adaptive vs Basic AI, paired difference',
         title: (better: number, total: number) =>
-          `Paired difference: the student’s completion rate is clearly above the blind driver’s in ${better} of ${total} conditions`,
+          `Paired difference: the Adaptive AI’s completion rate is clearly above the Basic AI’s in ${better} of ${total} conditions`,
         subtitle:
-          'Student minus blind, same tracks and conditions. Whiskers that cross zero mean no clear difference.',
+          'Adaptive minus Basic AI, same tracks and conditions. Whiskers that cross zero mean no clear difference.',
         axis: 'Completion difference (percentage points)',
       },
       lapTime: {
@@ -480,13 +565,13 @@ npm ci && npm run dev`,
       puddle: {
         title: (ms: number, n?: number, of?: number) =>
           n != null && of != null && n < of
-            ? `The student notices a single puddle in ${n} of ${of} trials, after about ${ms} ms when it does`
-            : `The student notices a puddle under the rear wheels in about ${ms} ms`,
+            ? `The Adaptive AI notices a single puddle in ${n} of ${of} trials, after about ${ms} ms when it does`
+            : `The Adaptive AI notices a puddle under the rear wheels in about ${ms} ms`,
         titleNotNoticed: (n: number, of: number) =>
-          `The student doesn’t notice a single puddle on a straight (${n} of ${of} trials noticed): it passes in under half a second and barely changes the motion the student reads`,
+          `The Adaptive AI doesn’t notice a single puddle on a straight (${n} of ${of} trials noticed): it passes in under half a second and barely changes the motion the Adaptive AI reads`,
         titleMissing: 'Feeling a puddle',
         subtitle:
-          'True rear grip (blue) vs the student’s estimate (amber) as the car crosses a single puddle on a straight. Time 0 is when the true grip first drops by more than 0.1.',
+          'True rear grip (blue) vs the Adaptive AI’s estimate (amber) as the car crosses a single puddle on a straight. Time 0 is when the true grip first drops by more than 0.1.',
         x: 'Time from entering the puddle (ms)',
         y: 'Rear grip μ',
       },
@@ -530,9 +615,9 @@ npm ci && npm run dev`,
     limits: [
       'Everything here is simulated. A real car has suspension, load transfer, four tires and sensors that fail in ways this model doesn’t.',
       'The world is flat and two-dimensional, with one kind of car.',
-      'All five students share one teacher’s driving policy, so their disagreement measures uncertainty about the road, not about the driving itself.',
+      'The Adaptive AI’s risk estimate comes from five small networks that share one driving policy, so their disagreement measures uncertainty about the road, not about the driving itself.',
       'Each driver comes from one training run on one GPU (compute above). Other seeds or longer runs could change these numbers.',
-      'Results that don’t favor the student are shown as they came out.',
+      'Results that don’t favor the Adaptive AI are shown as they came out.',
     ],
   },
   controls: {

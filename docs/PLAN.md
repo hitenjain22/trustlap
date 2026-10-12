@@ -101,3 +101,12 @@ Status 2026-10-11 14:30: items 1–3 done (draw-a-track in `web/src/components/T
 Status 2026-10-11 15:20: item 4 investigated; see DECISIONS ("Load-time long tasks"). M7 follow-ups 1–4 closed.
 
 Status 2026-10-11 night: crash toast, chase camera, tire-force arrows, confidence halo, puddle test done. Next: mobile bottom sheet, README GIF.
+
+## Simplification pass (2026-10-11 night, Hiten's request)
+
+Goal: someone seeing the site for the first time understands what was done, what the results mean and what each control changes. Model: SkyTrust (question-led pages, a report card with baselines, one simple chart, generated takeaways, details folded) and Lightning (a numbered walk-through, plain step titles, details in folds, a few big numbers with one-line meanings).
+
+1. Plain driver names everywhere (Adaptive AI / Basic AI / Teacher AI / Rule-based driver); Results becomes "Does feeling the road help?": three summary cards, one bar chart (laps per 100, Adaptive vs Basic, plain verdicts), generated takeaways, the full evaluation folded.
+2. How it works as a 4-step walk-through; the home story points into it.
+3. Playground guided: scenario cards, only the weather sliders up front with "what this changes", the rest under "More conditions"; telemetry trimmed with "More telemetry".
+4. Training lab: "Watch it learn" plus one chart; the rest folded.

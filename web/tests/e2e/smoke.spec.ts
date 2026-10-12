@@ -119,7 +119,7 @@ test('playground: draw a loop, validate it, race on it', async ({ page }) => {
 test('playground: the puddle test drives into a puddle and scores the result', async ({ page }) => {
   test.setTimeout(75_000)
   await page.goto('/playground')
-  await page.getByRole('button', { name: 'Run the puddle test' }).click({ timeout: 15_000 })
+  await page.getByRole('button', { name: /^Puddle test/ }).click({ timeout: 15_000 })
   await expect(page.getByLabel('Track').and(page.getByRole('combobox'))).toHaveValue('')
   // Either verdict is fine here; which one it is comes from the trained student.
   await expect(

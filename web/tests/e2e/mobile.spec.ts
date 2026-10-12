@@ -17,7 +17,7 @@ test('phone: the menu links every page and the conditions sheet has tabs', async
   await expect(page.locator('#mobile-nav').getByRole('link')).toHaveCount(4)
   await page.getByRole('button', { name: 'Menu' }).click()
   await page.getByRole('button', { name: 'Conditions' }).click()
-  await page.getByRole('tab', { name: 'Electronics' }).click()
+  await page.getByRole('tab', { name: 'More conditions' }).click()
   await expect(page.getByRole('slider', { name: 'Steering lag' })).toBeVisible()
   await expect(page.getByRole('slider', { name: 'Rain', exact: true })).toHaveCount(0)
 })

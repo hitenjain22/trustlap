@@ -147,6 +147,7 @@ export function TelemetryPanel({
   governorOn: boolean
 }) {
   const [mph, setMph] = useState(false)
+  const [more, setMore] = useState(false)
   if (!t) return <div className="h-[168px] px-4 py-4 text-text-3 md:px-6">{T.waiting}</div>
   const speed = mph ? t.speedMps * 2.23694 : t.speedMps * 3.6
   const stretch = reduced() ? 100 : 75 + 50 * Math.min(1, t.speedMps / TOP_SPEED_MPS)
@@ -154,7 +155,7 @@ export function TelemetryPanel({
   const risk = t.pCrash
   return (
     <section
-      className="grid gap-x-8 gap-y-5 border-t border-line px-4 py-4 md:grid-cols-[minmax(170px,auto)_1fr_1fr] md:px-6"
+      className={`grid gap-x-8 gap-y-5 border-t border-line px-4 py-4 md:px-6 ${more ? 'md:grid-cols-[minmax(170px,auto)_1fr_1fr]' : 'md:grid-cols-[minmax(170px,auto)_1fr]'}`}
       aria-label={T.title}
     >
       <div>
@@ -198,6 +199,17 @@ export function TelemetryPanel({
       </div>
 
       <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <p className="text-[13px] text-text-3">{T.gripKey}</p>
+          <button
+            type="button"
+            className="text-[13px] text-sodium underline"
+            aria-expanded={more}
+            onClick={() => setMore((m) => !m)}
+          >
+            {more ? T.lessTelemetry : T.moreTelemetry}
+          </button>
+        </div>
         <GripGauge label={T.front} truth={t.muFront} estimate={t.muHatFront} />
         <GripGauge label={T.rear} truth={t.muRear} estimate={t.muHatRear} />
         <div>
@@ -232,64 +244,66 @@ export function TelemetryPanel({
         </div>
       </div>
 
-      <div className="flex flex-col gap-3">
-        <div className="grid grid-cols-3 gap-3">
-          <Sparkline
-            series={[{ values: t.history.speed, color: 'var(--paint)' }]}
-            max={TOP_SPEED_MPS}
-            label={T.sparkSpeed}
-          />
-          <Sparkline
-            series={[
-              { values: t.history.muRear, color: 'var(--grip-3)' },
-              { values: t.history.muHatRear, color: 'var(--sodium)' },
-            ]}
-            max={MU_MAX}
-            label={T.sparkGrip}
-          />
-          <Sparkline
-            series={[{ values: t.history.pCrash, color: 'var(--sodium)' }]}
-            max={1}
-            label={T.sparkRisk}
-          />
-        </div>
-        <div className="grid grid-cols-2 gap-4 text-[12px] text-text-3">
-          <div>
-            <div
-              className="relative h-2 rounded-full bg-asphalt-700"
-              role="img"
-              aria-label={T.steerAria(Math.round(t.steer * 100))}
-            >
-              <div className="absolute inset-y-0 left-1/2 w-px bg-line" />
-              <div
-                className="absolute inset-y-0 rounded-full bg-paint/80"
-                style={{
-                  left: `${50 + Math.min(0, -t.steer) * 50}%`,
-                  width: `${Math.abs(t.steer) * 50}%`,
-                }}
-              />
-            </div>
-            <p className="mt-1">{T.steering}</p>
+      {more && (
+        <div className="flex flex-col gap-3">
+          <div className="grid grid-cols-3 gap-3">
+            <Sparkline
+              series={[{ values: t.history.speed, color: 'var(--paint)' }]}
+              max={TOP_SPEED_MPS}
+              label={T.sparkSpeed}
+            />
+            <Sparkline
+              series={[
+                { values: t.history.muRear, color: 'var(--grip-3)' },
+                { values: t.history.muHatRear, color: 'var(--sodium)' },
+              ]}
+              max={MU_MAX}
+              label={T.sparkGrip}
+            />
+            <Sparkline
+              series={[{ values: t.history.pCrash, color: 'var(--sodium)' }]}
+              max={1}
+              label={T.sparkRisk}
+            />
           </div>
-          <div>
-            <div
-              className="relative h-2 rounded-full bg-asphalt-700"
-              role="img"
-              aria-label={T.pedalAria(Math.round(t.long * 100))}
-            >
-              <div className="absolute inset-y-0 left-1/2 w-px bg-line" />
+          <div className="grid grid-cols-2 gap-4 text-[12px] text-text-3">
+            <div>
               <div
-                className={`absolute inset-y-0 rounded-full ${t.long >= 0 ? 'bg-paint/80' : 'bg-text-3'}`}
-                style={{
-                  left: `${t.long >= 0 ? 50 : 50 + t.long * 50}%`,
-                  width: `${Math.abs(t.long) * 50}%`,
-                }}
-              />
+                className="relative h-2 rounded-full bg-asphalt-700"
+                role="img"
+                aria-label={T.steerAria(Math.round(t.steer * 100))}
+              >
+                <div className="absolute inset-y-0 left-1/2 w-px bg-line" />
+                <div
+                  className="absolute inset-y-0 rounded-full bg-paint/80"
+                  style={{
+                    left: `${50 + Math.min(0, -t.steer) * 50}%`,
+                    width: `${Math.abs(t.steer) * 50}%`,
+                  }}
+                />
+              </div>
+              <p className="mt-1">{T.steering}</p>
             </div>
-            <p className="mt-1">{T.pedals}</p>
+            <div>
+              <div
+                className="relative h-2 rounded-full bg-asphalt-700"
+                role="img"
+                aria-label={T.pedalAria(Math.round(t.long * 100))}
+              >
+                <div className="absolute inset-y-0 left-1/2 w-px bg-line" />
+                <div
+                  className={`absolute inset-y-0 rounded-full ${t.long >= 0 ? 'bg-paint/80' : 'bg-text-3'}`}
+                  style={{
+                    left: `${t.long >= 0 ? 50 : 50 + t.long * 50}%`,
+                    width: `${Math.abs(t.long) * 50}%`,
+                  }}
+                />
+              </div>
+              <p className="mt-1">{T.pedals}</p>
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </section>
   )
 }

@@ -46,7 +46,9 @@ const PRESETS = [
   },
 ] as const satisfies readonly { id: string; values: Partial<ConditionValues> }[]
 
-type SheetTab = 'weather' | 'car' | 'electronics' | 'safety'
+type SheetTab = 'weather' | 'more' | 'safety'
+/** The everyday conditions shown up front; everything else sits under "More conditions". */
+const MAIN_KEYS = ['rain', 'muDry', 'puddles', 'windMps'] as const
 const PLAYGROUND_CARS = 1 // the focused car; ghosts are added per driver
 const DRIVER_ORDER: DriverKind[] = ['student', 'blind', 'teacher', 'scripted'] // SPEC 10.2
 const SPEEDS = [0.5, 1, 2] as const
@@ -296,7 +298,12 @@ export default function Playground() {
     )
   }, [])
 
-  const groups = useMemo(() => (cfg ? controlsFrom(cfg) : null), [cfg])
+  const groups = useMemo(() => {
+    if (!cfg) return null
+    const all = Object.values(controlsFrom(cfg)).flat()
+    const main = (k: Key) => (MAIN_KEYS as readonly Key[]).includes(k)
+    return { weather: all.filter((c) => main(c.key)), more: all.filter((c) => !main(c.key)) }
+  }, [cfg])
   const defaults = useMemo<Partial<ConditionValues>>(
     () =>
       cfg
@@ -521,7 +528,7 @@ export default function Playground() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  const groupBody = (g: 'weather' | 'car' | 'electronics') =>
+  const groupBody = (g: 'weather' | 'more') =>
     groups && (
       <div className="flex flex-col gap-5 px-5 pb-6">
         {groups[g].map((c) => (
@@ -536,6 +543,7 @@ export default function Playground() {
             onChange={(v) => set(c.key, v)}
             format={c.format}
             valueText={c.spoken}
+            hint={strings.playground.hints[c.key]}
           />
         ))}
       </div>
@@ -565,25 +573,39 @@ export default function Playground() {
       <p className="text-[13px] text-text-3">{strings.playground.governorNote}</p>
     </div>
   )
+  // Scenarios: what to try first, each with what to watch for.
   const presetChips = (
     <div className="px-5 pt-4">
-      <p className="label">{strings.playground.presets}</p>
+      <p className="label">{strings.playground.scenariosTitle}</p>
       <div
-        className="mt-2 flex flex-wrap gap-2"
+        className="mt-2 flex flex-col gap-2"
         role="group"
-        aria-label={strings.playground.presets}
+        aria-label={strings.playground.scenariosTitle}
       >
-        {PRESETS.map((p) => (
-          <button key={p.id} type="button" className="chip" onClick={() => applyPreset(p)}>
-            {strings.playground.presetNames[p.id]}
-          </button>
-        ))}
+        {[...PRESETS.map((p) => p.id), 'puddle'].map((id) => {
+          const sc = strings.playground.scenarios[id]!
+          const preset = PRESETS.find((p) => p.id === id)
+          return (
+            <button
+              key={id}
+              type="button"
+              disabled={id === 'puddle' && !ready}
+              onClick={() => {
+                if (preset) applyPreset(preset)
+                else runPuddleTest()
+                setSheetOpen(false)
+              }}
+              className="rounded-control border border-line px-3 py-2 text-left hover:border-text-3 hover:bg-asphalt-700 disabled:opacity-45"
+            >
+              <span className="block text-[14px] font-[620] text-paint">{sc.name}</span>
+              <span className="block text-[13px] text-text-3">{sc.watch}</span>
+            </button>
+          )
+        })}
       </div>
     </div>
   )
-  const sheetTabs: SheetTab[] = calibration
-    ? ['weather', 'car', 'electronics', 'safety']
-    : ['weather', 'car', 'electronics']
+  const sheetTabs: SheetTab[] = calibration ? ['weather', 'more', 'safety'] : ['weather', 'more']
 
   return (
     <div className="mx-auto grid max-w-[1920px] max-md:pb-14 gap-0 lg:grid-cols-[1fr_340px]">
@@ -685,6 +707,7 @@ export default function Playground() {
               </label>
             ))}
           </div>
+          <p className="w-full text-[13px] text-text-3">{strings.drivers[driver].what}</p>
         </div>
         {/* While drawing, give small screens room to draw (the overlay covers this box). */}
         <div className={`relative max-md:order-first ${drawing ? 'min-h-[min(560px,75svh)]' : ''}`}>
@@ -720,9 +743,6 @@ export default function Playground() {
               </button>
             ))}
           </div>
-          <Button variant="ghost" disabled={!ready} onClick={runPuddleTest}>
-            {strings.puddleTest.run}
-          </Button>
           <label className="chip">
             <input
               type="checkbox"
@@ -788,7 +808,7 @@ export default function Playground() {
           <p className="px-5 pt-5 text-[14px] text-text-2">{strings.playground.intro}</p>
           {presetChips}
           {groups &&
-            (['weather', 'car', 'electronics'] as const).map((g, i) => (
+            (['weather', 'more'] as const).map((g, i) => (
               <details key={g} open={i === 0} className="group border-b border-line">
                 <summary className="cursor-pointer list-none px-5 py-4 text-[16px] font-[620] text-paint">
                   {strings.playground.groups[g]}

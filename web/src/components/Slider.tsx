@@ -18,6 +18,8 @@ export interface SliderProps {
   trained?: [number, number]
   size?: 'regular' | 'large'
   note?: string
+  /** One plain line under the label: what changing this does. */
+  hint?: string
 }
 
 export function Slider({
@@ -32,6 +34,7 @@ export function Slider({
   trained,
   size = 'regular',
   note,
+  hint,
 }: SliderProps) {
   const id = useId()
   const pct = (v: number) => ((v - min) / (max - min)) * 100
@@ -52,6 +55,11 @@ export function Slider({
           {format(value)}
         </output>
       </div>
+      {hint && (
+        <p id={`${id}-hint`} className="mt-0.5 text-[13px] text-text-3">
+          {hint}
+        </p>
+      )}
       <div className="slider__track">
         {band && <span className="slider__band" style={band} aria-hidden="true" />}
         <input
@@ -62,6 +70,7 @@ export function Slider({
           step={step}
           value={value}
           aria-valuetext={valueText(value)}
+          aria-describedby={hint ? `${id}-hint` : undefined}
           onChange={(e) => onChange(Number(e.currentTarget.value))}
         />
       </div>

@@ -62,7 +62,7 @@ await wait(11000)
 // 3. Puddle test (~22 s).
 await page.goto(base + '/playground')
 await caption('Puddle test: one puddle on a long straight. Does the grip estimate drop?')
-await page.getByRole('button', { name: 'Run the puddle test' }).click({ timeout: 15000 })
+await page.getByRole('button', { name: /^Puddle test/ }).click({ timeout: 15000 })
 await page
   .getByRole('status')
   .filter({ hasText: /Noticed the slippery patch|Didn’t notice/ })

@@ -106,6 +106,37 @@ function GripGauge({ label, truth, estimate }: { label: string; truth: number; e
   )
 }
 
+/** Phone strip (SPEC 10.2 mobile): speed, rear grip estimate vs truth, crash risk. */
+export function TelemetryStrip({ t }: { t: Telemetry | null }) {
+  if (!t) return <div className="h-12 px-4 py-3 text-[13px] text-text-3">{T.waiting}</div>
+  const est = Number.isFinite(t.muHatRear) ? t.muHatRear.toFixed(2) : '–'
+  return (
+    <dl
+      className="grid grid-cols-3 gap-3 border-t border-line px-4 py-2 text-[13px]"
+      aria-label={T.title}
+    >
+      <div>
+        <dt className="text-text-3">{T.speedShort}</dt>
+        <dd className="numeral text-[20px] leading-tight text-paint">
+          {Math.round(t.speedMps * 3.6)} <span className="text-[12px] text-text-2">km/h</span>
+        </dd>
+      </div>
+      <div>
+        <dt className="text-text-3">{T.rear}</dt>
+        <dd className="numeral leading-tight text-paint">
+          {T.gripShort(est, t.muRear.toFixed(2))}
+        </dd>
+      </div>
+      <div>
+        <dt className="text-text-3">{T.risk}</dt>
+        <dd className="numeral text-[20px] leading-tight text-paint">
+          {Number.isFinite(t.pCrash) ? `${Math.round(t.pCrash * 100)}%` : '–'}
+        </dd>
+      </div>
+    </dl>
+  )
+}
+
 export function TelemetryPanel({
   t,
   tau,

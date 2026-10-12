@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '../components/Button.tsx'
 import { DiceIcon, PlayIcon } from '../components/icons.tsx'
 import { LiveCanvas } from '../components/LiveCanvas.tsx'
-import { TelemetryPanel } from '../components/TelemetryPanel.tsx'
+import { TelemetryPanel, TelemetryStrip } from '../components/TelemetryPanel.tsx'
 import { PuddleTestPanel } from '../components/PuddleTestPanel.tsx'
 import { TrackDrawer } from '../components/TrackDrawer.tsx'
 import { Slider } from '../components/Slider.tsx'
@@ -15,6 +15,7 @@ import {
   type ShowcaseTrack,
 } from '../data/artifacts.ts'
 import { useLiveSim } from '../hooks/useLiveSim.ts'
+import { useMediaQuery } from '../hooks/useMediaQuery.ts'
 import { scorePuddleTest } from '../state/puddleTest.ts'
 import { parsePlayground, serializePlayground } from '../state/urlState.ts'
 import type { SimConfig } from '../sim/config.ts'
@@ -45,6 +46,7 @@ const PRESETS = [
   },
 ] as const satisfies readonly { id: string; values: Partial<ConditionValues> }[]
 
+type SheetTab = 'weather' | 'car' | 'electronics' | 'safety'
 const PLAYGROUND_CARS = 1 // the focused car; ghosts are added per driver
 const DRIVER_ORDER: DriverKind[] = ['student', 'blind', 'teacher', 'scripted'] // SPEC 10.2
 const SPEEDS = [0.5, 1, 2] as const
@@ -232,6 +234,10 @@ export default function Playground() {
   // The worker's counts restart whenever the cars are re-placed, so those actions reset this.
   const [crashSeen, setCrashSeen] = useState(0)
   const [camera, setCamera] = useState<'overview' | 'chase'>('overview')
+  // Phones (SPEC 10.2 mobile): canvas first, a telemetry strip, conditions in a bottom sheet.
+  const phone = useMediaQuery('(max-width: 767px)')
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const [sheetTab, setSheetTab] = useState<SheetTab>('weather')
   const [showForces, setShowForces] = useState(false)
   const [showKeys, setShowKeys] = useState(false)
   const [drawing, setDrawing] = useState(false)
@@ -515,8 +521,72 @@ export default function Playground() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  const groupBody = (g: 'weather' | 'car' | 'electronics') =>
+    groups && (
+      <div className="flex flex-col gap-5 px-5 pb-6">
+        {groups[g].map((c) => (
+          <Slider
+            key={c.key}
+            label={c.label}
+            value={values[c.key] ?? defaults[c.key] ?? c.min}
+            min={c.min}
+            max={c.max}
+            step={c.step}
+            trained={c.trained}
+            onChange={(v) => set(c.key, v)}
+            format={c.format}
+            valueText={c.spoken}
+          />
+        ))}
+      </div>
+    )
+  const safetyBody = (
+    <div className="flex flex-col gap-4 px-5 pb-6">
+      <label className="flex items-center justify-between gap-3 text-[14px] text-paint">
+        {strings.playground.governor}
+        <input
+          type="checkbox"
+          role="switch"
+          checked={governorOn}
+          onChange={(e) => applyGovernor(e.currentTarget.checked, tau)}
+          className="size-5 accent-[var(--sodium)]"
+        />
+      </label>
+      <Slider
+        label={strings.playground.governorThreshold}
+        value={tau}
+        min={0.05}
+        max={0.5}
+        step={0.05}
+        onChange={(v) => applyGovernor(governorOn, v)}
+        format={(v) => `${Math.round(v * 100)}%`}
+        valueText={(v) => `${Math.round(v * 100)} percent crash risk`}
+      />
+      <p className="text-[13px] text-text-3">{strings.playground.governorNote}</p>
+    </div>
+  )
+  const presetChips = (
+    <div className="px-5 pt-4">
+      <p className="label">{strings.playground.presets}</p>
+      <div
+        className="mt-2 flex flex-wrap gap-2"
+        role="group"
+        aria-label={strings.playground.presets}
+      >
+        {PRESETS.map((p) => (
+          <button key={p.id} type="button" className="chip" onClick={() => applyPreset(p)}>
+            {strings.playground.presetNames[p.id]}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+  const sheetTabs: SheetTab[] = calibration
+    ? ['weather', 'car', 'electronics', 'safety']
+    : ['weather', 'car', 'electronics']
+
   return (
-    <div className="mx-auto grid max-w-[1920px] gap-0 lg:grid-cols-[1fr_340px]">
+    <div className="mx-auto grid max-w-[1920px] max-md:pb-14 gap-0 lg:grid-cols-[1fr_340px]">
       <section className="flex min-w-0 flex-col" aria-labelledby="pg-title">
         <div className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-3 md:px-6">
           <h1 id="pg-title" className="sr-only">
@@ -611,7 +681,7 @@ export default function Playground() {
           </div>
         </div>
         {/* While drawing, give small screens room to draw (the overlay covers this box). */}
-        <div className={`relative ${drawing ? 'min-h-[min(560px,75svh)]' : ''}`}>
+        <div className={`relative max-md:order-first ${drawing ? 'min-h-[min(560px,75svh)]' : ''}`}>
           <LiveCanvas
             canvasRef={sim.canvasRef}
             phase={sim.status.phase}
@@ -659,119 +729,133 @@ export default function Playground() {
         {puddleTest && (
           <PuddleTestPanel t={sim.telemetry} onRunAgain={runPuddleTest} onEnd={endPuddleTest} />
         )}
-        <TelemetryPanel t={sim.telemetry} tau={calibration ? tau : null} governorOn={governorOn} />
+        {phone ? (
+          <div className="order-first">
+            <TelemetryStrip t={sim.telemetry} />
+          </div>
+        ) : (
+          <TelemetryPanel
+            t={sim.telemetry}
+            tau={calibration ? tau : null}
+            governorOn={governorOn}
+          />
+        )}
       </section>
-      <aside
-        className="border-line bg-asphalt-800 lg:h-[calc(100svh-56px)] lg:overflow-y-auto lg:border-l"
-        aria-label="Conditions"
-      >
-        <div className="flex items-center justify-end gap-1 border-b border-line px-3 py-2">
-          <Button variant="ghost" onClick={() => void copyLink()}>
-            {strings.playground.copyLink}
-          </Button>
-          <div className="relative">
-            <Button
-              variant="ghost"
-              aria-expanded={showKeys}
-              aria-label={strings.playground.shortcuts}
-              onClick={() => setShowKeys((v) => !v)}
-            >
-              ?
+      {!phone && (
+        <aside
+          className="border-line bg-asphalt-800 lg:h-[calc(100svh-56px)] lg:overflow-y-auto lg:border-l"
+          aria-label="Conditions"
+        >
+          <div className="flex items-center justify-end gap-1 border-b border-line px-3 py-2">
+            <Button variant="ghost" onClick={() => void copyLink()}>
+              {strings.playground.copyLink}
             </Button>
-            {showKeys && (
-              <div
-                className="absolute right-0 z-20 mt-2 w-64 rounded-panel border border-line bg-asphalt-800 p-4 text-[13px]"
-                role="dialog"
+            <div className="relative">
+              <Button
+                variant="ghost"
+                aria-expanded={showKeys}
                 aria-label={strings.playground.shortcuts}
+                onClick={() => setShowKeys((v) => !v)}
               >
-                <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
-                  {strings.playground.keys.map(([k, v]) => (
-                    <div key={k} className="contents">
-                      <dt>
-                        <kbd className="rounded border border-line px-1.5 text-paint">{k}</kbd>
-                      </dt>
-                      <dd className="text-text-2">{v}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </div>
-            )}
+                ?
+              </Button>
+              {showKeys && (
+                <div
+                  className="absolute right-0 z-20 mt-2 w-64 rounded-panel border border-line bg-asphalt-800 p-4 text-[13px]"
+                  role="dialog"
+                  aria-label={strings.playground.shortcuts}
+                >
+                  <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
+                    {strings.playground.keys.map(([k, v]) => (
+                      <div key={k} className="contents">
+                        <dt>
+                          <kbd className="rounded border border-line px-1.5 text-paint">{k}</kbd>
+                        </dt>
+                        <dd className="text-text-2">{v}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-        <p className="px-5 pt-5 text-[14px] text-text-2">{strings.playground.intro}</p>
-        <div className="px-5 pt-4">
-          <p className="label">{strings.playground.presets}</p>
-          <div
-            className="mt-2 flex flex-wrap gap-2"
-            role="group"
-            aria-label={strings.playground.presets}
-          >
-            {PRESETS.map((p) => (
-              <button key={p.id} type="button" className="chip" onClick={() => applyPreset(p)}>
-                {strings.playground.presetNames[p.id]}
-              </button>
+          <p className="px-5 pt-5 text-[14px] text-text-2">{strings.playground.intro}</p>
+          {presetChips}
+          {groups &&
+            (['weather', 'car', 'electronics'] as const).map((g, i) => (
+              <details key={g} open={i === 0} className="group border-b border-line">
+                <summary className="cursor-pointer list-none px-5 py-4 text-[16px] font-[620] text-paint">
+                  {strings.playground.groups[g]}
+                </summary>
+                {groupBody(g)}
+              </details>
             ))}
-          </div>
-        </div>
-        {groups &&
-          (['weather', 'car', 'electronics'] as const).map((g, i) => (
-            <details key={g} open={i === 0} className="group border-b border-line">
+          {calibration && (
+            <details className="group border-b border-line">
               <summary className="cursor-pointer list-none px-5 py-4 text-[16px] font-[620] text-paint">
-                {strings.playground.groups[g]}
+                {strings.playground.groups.safety}
               </summary>
-              <div className="flex flex-col gap-5 px-5 pb-6">
-                {groups[g].map((c) => (
-                  <Slider
-                    key={c.key}
-                    label={c.label}
-                    value={values[c.key] ?? defaults[c.key] ?? c.min}
-                    min={c.min}
-                    max={c.max}
-                    step={c.step}
-                    trained={c.trained}
-                    onChange={(v) => set(c.key, v)}
-                    format={c.format}
-                    valueText={c.spoken}
-                  />
+              {safetyBody}
+            </details>
+          )}
+        </aside>
+      )}
+      {phone && (
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-asphalt-800">
+          <button
+            type="button"
+            className="flex min-h-12 w-full items-center justify-between px-4 text-[15px] font-[620] text-paint"
+            aria-expanded={sheetOpen}
+            aria-controls="pg-sheet"
+            onClick={() => setSheetOpen((v) => !v)}
+          >
+            {strings.playground.conditions}
+            <span aria-hidden="true">{sheetOpen ? '▾' : '▴'}</span>
+          </button>
+          {sheetOpen && (
+            <div id="pg-sheet" className="max-h-[65svh] overflow-y-auto pb-4">
+              {presetChips}
+              <div
+                role="tablist"
+                aria-label={strings.playground.conditions}
+                className="mt-4 flex gap-1 overflow-x-auto border-b border-line px-3"
+              >
+                {sheetTabs.map((g) => (
+                  <button
+                    key={g}
+                    type="button"
+                    role="tab"
+                    id={`tab-${g}`}
+                    aria-selected={sheetTab === g}
+                    aria-controls="pg-tabpanel"
+                    className={`min-h-11 shrink-0 px-3 text-[14px] font-[560] ${sheetTab === g ? 'border-b-2 border-sodium text-paint' : 'text-text-2'}`}
+                    onClick={() => setSheetTab(g)}
+                  >
+                    {strings.playground.groups[g]}
+                  </button>
                 ))}
               </div>
-            </details>
-          ))}
-        {calibration && (
-          <details className="group border-b border-line">
-            <summary className="cursor-pointer list-none px-5 py-4 text-[16px] font-[620] text-paint">
-              {strings.playground.groups.safety}
-            </summary>
-            <div className="flex flex-col gap-4 px-5 pb-6">
-              <label className="flex items-center justify-between gap-3 text-[14px] text-paint">
-                {strings.playground.governor}
-                <input
-                  type="checkbox"
-                  role="switch"
-                  checked={governorOn}
-                  onChange={(e) => applyGovernor(e.currentTarget.checked, tau)}
-                  className="size-5 accent-[var(--sodium)]"
-                />
-              </label>
-              <Slider
-                label={strings.playground.governorThreshold}
-                value={tau}
-                min={0.05}
-                max={0.5}
-                step={0.05}
-                onChange={(v) => applyGovernor(governorOn, v)}
-                format={(v) => `${Math.round(v * 100)}%`}
-                valueText={(v) => `${Math.round(v * 100)} percent crash risk`}
-              />
-              <p className="text-[13px] text-text-3">{strings.playground.governorNote}</p>
+              <div
+                id="pg-tabpanel"
+                role="tabpanel"
+                aria-labelledby={`tab-${sheetTab}`}
+                className="pt-4"
+              >
+                {sheetTab === 'safety' ? safetyBody : groupBody(sheetTab)}
+              </div>
+              <div className="px-3">
+                <Button variant="ghost" onClick={() => void copyLink()}>
+                  {strings.playground.copyLink}
+                </Button>
+              </div>
             </div>
-          </details>
-        )}
-      </aside>
+          )}
+        </div>
+      )}
       {crash && (
         <div
           role="status"
-          className="fixed bottom-6 left-1/2 z-30 flex w-[min(92vw,560px)] -translate-x-1/2 flex-wrap items-center gap-3 rounded-panel border border-line bg-asphalt-800 px-4 py-3 text-[14px] text-paint"
+          className="fixed bottom-6 left-1/2 z-30 max-md:bottom-16 flex w-[min(92vw,560px)] -translate-x-1/2 flex-wrap items-center gap-3 rounded-panel border border-line bg-asphalt-800 px-4 py-3 text-[14px] text-paint"
         >
           <p className="min-w-0 flex-1">{crash}</p>
           <Button variant="primary" onClick={restartLap}>
@@ -785,7 +869,7 @@ export default function Playground() {
       {toast && !crash && (
         <div
           role="status"
-          className="fixed bottom-6 left-1/2 z-30 -translate-x-1/2 rounded-panel border border-line bg-asphalt-800 px-4 py-3 text-[14px] text-paint"
+          className="fixed bottom-6 left-1/2 z-30 max-md:bottom-16 -translate-x-1/2 rounded-panel border border-line bg-asphalt-800 px-4 py-3 text-[14px] text-paint"
         >
           {toast}
         </div>

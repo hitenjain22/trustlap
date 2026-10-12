@@ -419,7 +419,7 @@ export default function Lab() {
           </h2>
           <p className="mt-1 max-w-[72ch] text-[14px] text-text-2">{L.tuning.subtitle}</p>
           {population ? (
-            <div className="mt-4 grid gap-8 md:grid-cols-2">
+            <div className="mt-4 grid grid-cols-1 gap-8 md:grid-cols-2">
               <LineChart
                 series={hpSeries('lr')}
                 xLabel={L.population.x}

@@ -110,6 +110,7 @@ export const strings = {
     drawTrack: 'Draw a track',
     crashes: 'Crashes',
     camera: 'Camera',
+    conditions: 'Conditions',
     cameras: { overview: 'Overview', chase: 'Chase' },
     showForces: 'Show tire forces',
     crashToast: (c: {
@@ -172,6 +173,8 @@ export const strings = {
     title: 'Telemetry for the focused car',
     waiting: 'Waiting for the first lap data…',
     unitToggle: 'Switch speed units',
+    speedShort: 'Speed',
+    gripShort: (est: string, truth: string) => `est ${est} / true ${truth}`,
     lap: 'Lap',
     best: 'Best',
     delta: 'Δ vs ghost',

@@ -474,7 +474,17 @@ npm ci && npm run dev`,
   lab: {
     title: 'Training lab',
     intro:
-      'How the Teacher AI learned: a population trained side by side on one GPU, copying each other’s best ideas while the simulator made the world harder.',
+      'How the Teacher AI learned to drive, from its first laps to the end of training. The Adaptive AI then learned to drive like it (step 3 of How it works).',
+    simple: {
+      title: 'It got better with practice',
+      progress: (first: number, last: number, maxD: number) =>
+        `At its first saved checkpoint it finished ${first}% of its training laps; by the end, ${last}%, while the simulator made the conditions harder, up to ${maxD}% of full difficulty.`,
+      y: 'Progress (m/s)',
+      note: 'How many metres around the track the best driver covered per second, across training. Higher is faster and fewer crashes.',
+      fullTitle: 'The full training record',
+      fullSummary: (n: number) =>
+        `All ${n} drivers in the population, the family tree of who copied whom, the difficulty dial over time, and the learning settings the winner chose.`,
+    },
     source:
       'From population_curves.json, lineage.json, curriculum.json and checkpoints/ · recorded during training',
     watch: {

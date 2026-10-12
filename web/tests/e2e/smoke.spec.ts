@@ -153,3 +153,16 @@ test('results: the plain summary comes first, the full evaluation is folded', as
   // The detailed charts are there but collapsed until asked for.
   await expect(page.locator('details').first()).not.toHaveAttribute('open')
 })
+
+test('lab and how it works lead with the simple view', async ({ page }) => {
+  await page.goto('/lab')
+  await expect(page.getByRole('heading', { name: 'It got better with practice' })).toBeVisible({
+    timeout: 15_000,
+  })
+  await page.goto('/how-it-works#step-3')
+  await expect(
+    page.getByRole('heading', { level: 2, name: 'Learn to feel the road' }),
+  ).toBeVisible()
+  await page.getByRole('button', { name: /Next step/ }).click()
+  await expect(page.getByRole('heading', { level: 2, name: 'Know when it’s unsure' })).toBeVisible()
+})

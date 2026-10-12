@@ -24,7 +24,8 @@ import { useLiveSim } from '../hooks/useLiveSim.ts'
 const L = strings.lab
 const LAB_CARS = 16
 const STOP_MS = 6000
-const millions = (v: number) => (v >= 1e6 ? `${Math.round(v / 1e6)}M` : `${Math.round(v / 1e3)}k`)
+const millions = (v: number) =>
+  v === 0 ? '0' : v >= 1e6 ? `${Math.round(v / 1e6)}M` : `${Math.round(v / 1e3)}k`
 
 /** Ids on the winner's ancestry: the winner, the member it copied, that member's source, … */
 function ancestry(lineage: Lineage | null): Set<number> {
@@ -279,6 +280,20 @@ export default function Lab() {
     ]
   }, [population, winners, hover])
 
+  // The newcomer's view: the winning driver's progress over training, one line.
+  const winnerSeries: Series[] = fitnessSeries.filter((x) => x.id === 'winner')
+  const first = checkpoints?.[0]
+  const last = checkpoints?.[checkpoints.length - 1]
+  const maxD = curriculum ? Math.max(...curriculum.points.map((p) => p.d)) : null
+  const progressLine =
+    first && last && maxD !== null
+      ? L.simple.progress(
+          Math.round(first.completion * 100),
+          Math.round(last.completion * 100),
+          Math.round(maxD * 100),
+        )
+      : null
+
   // The logged learning rate includes the linear decay to 0 (SPEC 7.2); PBT tunes the base rate,
   // so undo the known decay (and skip the last 5%, where the decayed value rounds to nothing).
   const totalUpdates = population ? Math.max(...population.points.map((p) => p.update)) : 1
@@ -320,142 +335,173 @@ export default function Lab() {
           </div>
         )}
 
-        <ChartFrame
-          title={L.population.title(population?.members ?? 0)}
-          subtitle={L.population.subtitle}
-          summary={L.population.summary}
-          table={
-            population
-              ? {
-                  columns: [
-                    'Steps',
-                    ...Array.from({ length: population.members }, (_, s) => L.tree.slot(s + 1)),
-                  ],
-                  rows: population.points
-                    .filter((_, i) => i % Math.ceil(population.points.length / 20) === 0)
-                    .map((p) => [millions(p.env_steps), ...p.fitness.map((f) => f.toFixed(2))]),
-                }
-              : null
-          }
-          source={source}
-          missing={!population}
-          loading={!loaded}
-        >
-          <LineChart
-            series={fitnessSeries}
-            xLabel={L.population.x}
-            yLabel={L.population.y}
-            formatX={millions}
-            formatY={(v) => v.toFixed(0)}
-            directLabels={false}
-            onHoverSeries={setHover}
-          />
-        </ChartFrame>
-
-        <ChartFrame
-          title={L.tree.title(lineage?.events.length ?? 0)}
-          subtitle={L.tree.subtitle}
-          summary={L.tree.summary}
-          table={
-            lineage
-              ? {
-                  columns: ['Steps', 'Copy', 'Learning rate', 'Entropy coef.'],
-                  rows: lineage.events.map((e) => [
-                    millions(e.env_steps),
-                    `#${e.parent_id} → #${e.child_id}`,
-                    `${e.hp_before.lr.toExponential(1)} → ${e.hp_after.lr.toExponential(1)}`,
-                    `${e.hp_before.ent.toExponential(1)} → ${e.hp_after.ent.toExponential(1)}`,
-                  ]),
-                }
-              : null
-          }
-          source={source}
-          missing={!lineage || !population}
-          loading={!loaded}
-        >
-          {lineage && population && (
-            <FamilyTree lineage={lineage} population={population} winners={winners} />
-          )}
-        </ChartFrame>
-
-        <ChartFrame
-          title={L.curriculum.title(
-            curriculum ? Math.max(...curriculum.points.map((p) => p.d)) : 0,
-          )}
-          subtitle={L.curriculum.subtitle}
-          summary={L.curriculum.summary}
-          table={
-            curriculum
-              ? {
-                  columns: ['Steps', 'Difficulty'],
-                  rows: curriculum.points
-                    .filter((_, i) => i % 10 === 0)
-                    .map((p) => [millions(p.env_steps), p.d.toFixed(2)]),
-                }
-              : null
-          }
-          source={source}
-          missing={!curriculum}
-          loading={!loaded}
-        >
-          <LineChart
-            series={
-              curriculum
-                ? [
-                    {
-                      id: 'd',
-                      label: 'Difficulty',
-                      color: 'var(--sodium)',
-                      step: true,
-                      points: curriculum.points.map((p) => ({ x: p.env_steps, y: p.d })),
-                    },
-                  ]
-                : []
-            }
-            xLabel={L.population.x}
-            yLabel={L.curriculum.y}
-            formatX={millions}
-            formatY={(v) => v.toFixed(1)}
-            yDomain={[0, 1]}
-            directLabels={false}
-            height={240}
-          />
-        </ChartFrame>
-
-        <section aria-labelledby="tuning" className="border-t border-line pt-6">
-          <h2 id="tuning" className="h3">
-            {L.tuning.title}
-          </h2>
-          <p className="mt-1 max-w-[72ch] text-[14px] text-text-2">{L.tuning.subtitle}</p>
-          {!loaded ? (
-            <div className="mt-4 h-[240px]" aria-hidden="true" />
-          ) : population ? (
-            <div className="mt-4 grid grid-cols-1 gap-8 md:grid-cols-2">
+        {loaded && winnerSeries.length > 0 && (
+          <section aria-labelledby="simple-learn">
+            <h2 id="simple-learn" className="h2">
+              {L.simple.title}
+            </h2>
+            {progressLine && <p className="mt-3 max-w-[72ch] text-text-2">{progressLine}</p>}
+            <div className="mt-6">
               <LineChart
-                series={hpSeries('lr')}
+                series={winnerSeries}
                 xLabel={L.population.x}
-                yLabel={L.tuning.lr}
+                yLabel={L.simple.y}
                 formatX={millions}
-                formatY={(v) => v.toExponential(1)}
-                logY
+                formatY={(v) => v.toFixed(0)}
                 directLabels={false}
-                height={220}
-              />
-              <LineChart
-                series={hpSeries('ent')}
-                xLabel={L.population.x}
-                yLabel={L.tuning.ent}
-                formatX={millions}
-                formatY={(v) => v.toExponential(1)}
-                logY
-                directLabels={false}
-                height={220}
+                height={260}
               />
             </div>
-          ) : (
-            <p className="mt-4 text-text-3">{strings.results.notComputed}</p>
-          )}
-        </section>
+            <p className="mt-2 text-[13px] text-text-3">{L.simple.note}</p>
+          </section>
+        )}
+
+        <details className="group rounded-panel border border-line">
+          <summary className="cursor-pointer list-none px-5 py-4">
+            <span className="text-[18px] font-[620] text-paint">{L.simple.fullTitle}</span>
+            <span className="mt-1 block text-[14px] text-text-2">
+              {population ? L.simple.fullSummary(population.members) : ''}
+            </span>
+          </summary>
+          <div className="flex flex-col gap-16 border-t border-line px-5 pb-8 pt-6">
+            <ChartFrame
+              title={L.population.title(population?.members ?? 0)}
+              subtitle={L.population.subtitle}
+              summary={L.population.summary}
+              table={
+                population
+                  ? {
+                      columns: [
+                        'Steps',
+                        ...Array.from({ length: population.members }, (_, s) => L.tree.slot(s + 1)),
+                      ],
+                      rows: population.points
+                        .filter((_, i) => i % Math.ceil(population.points.length / 20) === 0)
+                        .map((p) => [millions(p.env_steps), ...p.fitness.map((f) => f.toFixed(2))]),
+                    }
+                  : null
+              }
+              source={source}
+              missing={!population}
+              loading={!loaded}
+            >
+              <LineChart
+                series={fitnessSeries}
+                xLabel={L.population.x}
+                yLabel={L.population.y}
+                formatX={millions}
+                formatY={(v) => v.toFixed(0)}
+                directLabels={false}
+                onHoverSeries={setHover}
+              />
+            </ChartFrame>
+
+            <ChartFrame
+              title={L.tree.title(lineage?.events.length ?? 0)}
+              subtitle={L.tree.subtitle}
+              summary={L.tree.summary}
+              table={
+                lineage
+                  ? {
+                      columns: ['Steps', 'Copy', 'Learning rate', 'Entropy coef.'],
+                      rows: lineage.events.map((e) => [
+                        millions(e.env_steps),
+                        `#${e.parent_id} → #${e.child_id}`,
+                        `${e.hp_before.lr.toExponential(1)} → ${e.hp_after.lr.toExponential(1)}`,
+                        `${e.hp_before.ent.toExponential(1)} → ${e.hp_after.ent.toExponential(1)}`,
+                      ]),
+                    }
+                  : null
+              }
+              source={source}
+              missing={!lineage || !population}
+              loading={!loaded}
+            >
+              {lineage && population && (
+                <FamilyTree lineage={lineage} population={population} winners={winners} />
+              )}
+            </ChartFrame>
+
+            <ChartFrame
+              title={L.curriculum.title(
+                curriculum ? Math.max(...curriculum.points.map((p) => p.d)) : 0,
+              )}
+              subtitle={L.curriculum.subtitle}
+              summary={L.curriculum.summary}
+              table={
+                curriculum
+                  ? {
+                      columns: ['Steps', 'Difficulty'],
+                      rows: curriculum.points
+                        .filter((_, i) => i % 10 === 0)
+                        .map((p) => [millions(p.env_steps), p.d.toFixed(2)]),
+                    }
+                  : null
+              }
+              source={source}
+              missing={!curriculum}
+              loading={!loaded}
+            >
+              <LineChart
+                series={
+                  curriculum
+                    ? [
+                        {
+                          id: 'd',
+                          label: 'Difficulty',
+                          color: 'var(--sodium)',
+                          step: true,
+                          points: curriculum.points.map((p) => ({ x: p.env_steps, y: p.d })),
+                        },
+                      ]
+                    : []
+                }
+                xLabel={L.population.x}
+                yLabel={L.curriculum.y}
+                formatX={millions}
+                formatY={(v) => v.toFixed(1)}
+                yDomain={[0, 1]}
+                directLabels={false}
+                height={240}
+              />
+            </ChartFrame>
+
+            <section aria-labelledby="tuning" className="border-t border-line pt-6">
+              <h2 id="tuning" className="h3">
+                {L.tuning.title}
+              </h2>
+              <p className="mt-1 max-w-[72ch] text-[14px] text-text-2">{L.tuning.subtitle}</p>
+              {!loaded ? (
+                <div className="mt-4 h-[240px]" aria-hidden="true" />
+              ) : population ? (
+                <div className="mt-4 grid grid-cols-1 gap-8 md:grid-cols-2">
+                  <LineChart
+                    series={hpSeries('lr')}
+                    xLabel={L.population.x}
+                    yLabel={L.tuning.lr}
+                    formatX={millions}
+                    formatY={(v) => v.toExponential(1)}
+                    logY
+                    directLabels={false}
+                    height={220}
+                  />
+                  <LineChart
+                    series={hpSeries('ent')}
+                    xLabel={L.population.x}
+                    yLabel={L.tuning.ent}
+                    formatX={millions}
+                    formatY={(v) => v.toExponential(1)}
+                    logY
+                    directLabels={false}
+                    height={220}
+                  />
+                </div>
+              ) : (
+                <p className="mt-4 text-text-3">{strings.results.notComputed}</p>
+              )}
+            </section>
+          </div>
+        </details>
       </div>
     </div>
   )

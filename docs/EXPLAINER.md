@@ -6,6 +6,8 @@ Each component gets: what it does (two sentences), why it's needed, the one equa
 
 ---
 
+**Names on the website.** The site uses plain names for the four drivers: **Adaptive AI** = the student (RMA phase 2, feels the road from its motion history), **Basic AI** = the blind policy (same training, no grip sense), **Teacher AI** = the teacher (told the true conditions), **Rule-based driver** = the scripted controller (given the exact grip). This document and the code keep the technical names.
+
 ## The project layout (M0)
 
 **What it is.** Two halves that never run at the same time. `sim/` is a Python package that simulates cars and trains the AI drivers offline on a GPU (Colab/Kaggle). `web/` is a static website that loads the trained networks as plain files and runs them in your browser.

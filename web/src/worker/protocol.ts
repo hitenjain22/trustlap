@@ -7,7 +7,7 @@
 import type { SimConfig } from '../sim/config.ts'
 
 export const HEADER = 4 // [simTimeS, stepIndex, leaderLap (1-based), crashesTotal]
-export const STRIDE = 17 // per car, see CarField
+export const STRIDE = 24 // per car, see CarField
 export const CarField = {
   X: 0,
   Y: 1,
@@ -26,7 +26,30 @@ export const CarField = {
   LapTime: 14, // current lap so far (s)
   BestLap: 15, // best completed lap (s), NaN until one is done
   LastLap: 16, // last completed lap (s), NaN until one is done
+  FxFront: 17, // tire forces, body frame (N), last substep
+  FyFront: 18,
+  FxRear: 19,
+  FyRear: 20,
+  CrashSpeed: 21, // speed at the most recent crash (m/s), NaN before the first
+  CrashCause: 22, // bit flags, see CrashCause
+  Crashes: 23, // this car's crash count
 } as const
+
+/** Why the most recent crash happened, as bit flags (for the plain-words crash toast). */
+export const CrashCause = {
+  Puddle: 1, // drove through a puddle in the last 1.5 s
+  Corner: 2, // the track was curving (radius < 150 m) where it happened
+  Spun: 4, // spun out (otherwise: left the track)
+  Stalled: 8, // stopped moving
+  Wet: 16, // rain ≥ 30%
+  GovernorOn: 32, // student with the safety governor on
+} as const
+
+/**
+ * Puddle-test setup, the same as `evaluate.puddle_step` (sim/trustlap/evaluate.py): one puddle
+ * (grip × 0.4, radius 8 m) 200 m down the straight, the car starting at 20 m/s.
+ */
+export const PUDDLE_TEST = { puddleSM: 200, mult: 0.4, radiusM: 8, startSpeedMps: 20 } as const
 
 /** Driver identities (SPEC 11.3). Order matters: it's the snapshot's Driver index. */
 export const DRIVER_KINDS = ['scripted', 'blind', 'teacher', 'student'] as const
@@ -115,6 +138,13 @@ export interface SimApi {
   setTrack(trackSeed: number): Promise<TrackGeometry | null>
   /** A hand-drawn track from validated control points (meters); geometry seed is -1. */
   setCustomTrack(controlPoints: Float64Array, widthM: number): Promise<TrackGeometry | null>
+  /**
+   * The puddle test (SPEC 10.2): the evaluation's straight with a single puddle, one student
+   * car, dry conditions otherwise. Null before init.
+   */
+  startPuddleTest(): Promise<TrackGeometry | null>
+  /** Re-place the cars with a new count and layout on the current track (slow-device fallback). */
+  setCarCount(nCars: number, layout: SimInit['layout']): Promise<void>
   setConditions(values: Partial<ConditionValues>): Promise<number> // returns active puddles
   setDrivers(driver: DriverKind, ghosts: DriverKind[]): Promise<void>
   /** Training Lab: drive the "teacher" cars with a timeline checkpoint (checkpoints/<name>). */

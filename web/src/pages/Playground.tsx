@@ -3,6 +3,7 @@ import { Button } from '../components/Button.tsx'
 import { DiceIcon, PlayIcon } from '../components/icons.tsx'
 import { LiveCanvas } from '../components/LiveCanvas.tsx'
 import { TelemetryPanel } from '../components/TelemetryPanel.tsx'
+import { PuddleTestPanel } from '../components/PuddleTestPanel.tsx'
 import { TrackDrawer } from '../components/TrackDrawer.tsx'
 import { Slider } from '../components/Slider.tsx'
 import { strings } from '../copy/strings.ts'
@@ -14,9 +15,10 @@ import {
   type ShowcaseTrack,
 } from '../data/artifacts.ts'
 import { useLiveSim } from '../hooks/useLiveSim.ts'
+import { scorePuddleTest } from '../state/puddleTest.ts'
 import { parsePlayground, serializePlayground } from '../state/urlState.ts'
 import type { SimConfig } from '../sim/config.ts'
-import type { ConditionValues, DriverKind } from '../worker/protocol.ts'
+import { CrashCause, type ConditionValues, type DriverKind } from '../worker/protocol.ts'
 
 /** Condition presets (SPEC 10.2); anything a preset doesn't name resets to nominal. */
 const PRESETS = [
@@ -226,9 +228,15 @@ export default function Playground() {
   const [governorOn, setGovernorOn] = useState(url.governor ?? false)
   const [tau, setTau] = useState(url.tau ?? 0.2)
   const [toast, setToast] = useState<string | null>(null)
+  // Crash toast: shown while the focused car has crashed more times than the user has seen.
+  // The worker's counts restart whenever the cars are re-placed, so those actions reset this.
+  const [crashSeen, setCrashSeen] = useState(0)
+  const [camera, setCamera] = useState<'overview' | 'chase'>('overview')
+  const [showForces, setShowForces] = useState(false)
   const [showKeys, setShowKeys] = useState(false)
   const [drawing, setDrawing] = useState(false)
-  const [custom, setCustom] = useState(false) // racing on a hand-drawn track
+  const [custom, setCustom] = useState(false) // a hand-drawn track or the puddle test's straight
+  const [puddleTest, setPuddleTest] = useState(false)
   const drawButton = useRef<HTMLButtonElement>(null)
   useEffect(() => {
     loadCalibration().then(
@@ -249,11 +257,13 @@ export default function Playground() {
     const g = ghosts.filter((x) => x !== d)
     setDriver(d)
     setGhosts(g)
+    setCrashSeen(0)
     void sim.setDrivers(d, g)
   }
   const toggleGhost = (d: DriverKind) => {
     const g = ghosts.includes(d) ? ghosts.filter((x) => x !== d) : [...ghosts, d]
     setGhosts(g)
+    setCrashSeen(0)
     void sim.setDrivers(driver, g)
   }
   const [values, setValues] = useState<Partial<ConditionValues>>(url.values)
@@ -316,7 +326,39 @@ export default function Playground() {
   const pickTrack = (s: number) => {
     setSeed(s)
     setCustom(false)
+    setPuddleTest(false)
+    setCrashSeen(0)
     void sim.setTrack(s)
+  }
+  const runPuddleTest = () => {
+    setShowKeys(false)
+    setPuddleTest(true)
+    setCustom(true)
+    setCrashSeen(0)
+    setDriver('student')
+    setGhosts([])
+    setValues({ ...defaults, puddles: 1 })
+    setSpeed(0.5)
+    void sim.setSpeed(0.5)
+    if (!playing) {
+      setPlaying(true)
+      void sim.control('resume')
+    }
+    void sim.startPuddleTest()
+  }
+  const endPuddleTest = () => {
+    setPuddleTest(false)
+    setSpeed(1)
+    void sim.setSpeed(1)
+    if (!playing) {
+      setPlaying(true)
+      void sim.control('resume')
+    }
+    if (tracks[0]) pickTrack(tracks[0].seed)
+  }
+  const restartLap = () => {
+    setCrashSeen(0)
+    void sim.control('reset')
   }
   const showToast = (msg: string, ms = 2500) => {
     setToast(msg)
@@ -335,6 +377,8 @@ export default function Playground() {
   }
   const raceDrawn = (points: Float64Array, widthM: number) => {
     setCustom(true)
+    setPuddleTest(false)
+    setCrashSeen(0)
     void sim.setCustomTrack(points, widthM)
     closeDrawer()
     showToast(strings.playground.drawnNoLink, 4000)
@@ -350,6 +394,59 @@ export default function Playground() {
   // The seed on screen: the user's pick, else whatever the sim started with.
   const shownSeed = custom ? null : (seed ?? sim.status.track?.seed ?? null)
   const current = custom ? undefined : tracks.find((t) => t.seed === shownSeed)
+
+  const t = sim.telemetry
+  const crashCount = t?.crash.count ?? 0
+  const crash =
+    t && crashCount > crashSeen && Number.isFinite(t.crash.speedMps)
+      ? strings.playground.crashToast({
+          kmh: Math.round(t.crash.speedMps * 3.6),
+          driver: strings.playground.drivers[t.kind].toLowerCase(),
+          puddle: (t.crash.cause & CrashCause.Puddle) !== 0,
+          corner: (t.crash.cause & CrashCause.Corner) !== 0,
+          spun: (t.crash.cause & CrashCause.Spun) !== 0,
+          stalled: (t.crash.cause & CrashCause.Stalled) !== 0,
+          wet: (t.crash.cause & CrashCause.Wet) !== 0,
+          governor:
+            t.kind === 'student' && calibration
+              ? (t.crash.cause & CrashCause.GovernorOn) !== 0
+                ? 'on'
+                : 'off'
+              : null,
+        })
+      : null
+  // Renderer view options (no worker round trip).
+  const { setView } = sim
+  useEffect(() => {
+    setView({
+      camera,
+      showForces,
+      haloTau: calibration ? tau : null,
+      labels: strings.playground.drivers,
+    })
+  }, [setView, camera, showForces, calibration, tau, ready])
+
+  // Puddle test: pause 1.5 s after the verdict so the chart and result stay on screen.
+  const ph = puddleTest ? sim.telemetry?.history : undefined
+  const puddleDone = ph
+    ? ['noticed', 'missed'].includes(scorePuddleTest(ph.t, ph.muRear, ph.muHatRear).state)
+    : false
+  const { control } = sim
+  useEffect(() => {
+    if (!puddleDone || !playing) return
+    const id = setTimeout(() => {
+      void control('pause')
+      setPlaying(false)
+    }, 1500)
+    return () => clearTimeout(id)
+  }, [puddleDone, playing, control])
+
+  // The crash toast hides itself after 6 s (or when dismissed).
+  useEffect(() => {
+    if (!crash) return
+    const id = setTimeout(() => setCrashSeen(crashCount), 6000)
+    return () => clearTimeout(id)
+  }, [crash, crashCount])
 
   // Keep the URL in sync (replaceState, debounced 300 ms).
   const query = serializePlayground({
@@ -398,11 +495,14 @@ export default function Playground() {
       if (e.key === ' ') {
         e.preventDefault()
         togglePlay()
-      } else if (e.key === 'r' || e.key === 'R') void sim.control('reset')
+      } else if (e.key === 'r' || e.key === 'R') restartLap()
       else if (e.key === 'n' || e.key === 'N') pickTrack(Math.floor(Math.random() * 2 ** 31))
       else if (e.key === 'd' || e.key === 'D') {
         if (cfg) openDrawer()
-      } else if (e.key === '?') setShowKeys((v) => !v)
+      } else if (e.key === 'c' || e.key === 'C') {
+        setCamera((c) => (c === 'chase' ? 'overview' : 'chase'))
+      } else if (e.key === 'f' || e.key === 'F') setShowForces((v) => !v)
+      else if (e.key === '?') setShowKeys((v) => !v)
       else if (/^[1-4]$/.test(e.key)) {
         const d = DRIVER_ORDER[Number(e.key) - 1]!
         if (available(d)) pickDriver(d)
@@ -431,7 +531,11 @@ export default function Playground() {
             value={current ? current.seed : ''}
             onChange={(e) => pickTrack(Number(e.currentTarget.value))}
           >
-            {custom && <option value="">{strings.playground.drawnTrack}</option>}
+            {custom && (
+              <option value="">
+                {puddleTest ? strings.puddleTest.track : strings.playground.drawnTrack}
+              </option>
+            )}
             {!current && shownSeed !== null && (
               <option value="">{strings.playground.seed(shownSeed)}</option>
             )}
@@ -467,7 +571,7 @@ export default function Playground() {
               </button>
             ))}
           </div>
-          <Button variant="ghost" onClick={() => void sim.control('reset')}>
+          <Button variant="ghost" onClick={restartLap}>
             {strings.playground.restart}
           </Button>
         </div>
@@ -526,6 +630,35 @@ export default function Playground() {
             />
           )}
         </div>
+        <div className="flex flex-wrap items-center gap-3 border-t border-line px-4 py-2 text-[14px] md:px-6">
+          <span className="label">{strings.playground.camera}</span>
+          <div className="segmented" role="group" aria-label={strings.playground.camera}>
+            {(['overview', 'chase'] as const).map((c) => (
+              <button
+                key={c}
+                type="button"
+                aria-pressed={camera === c}
+                onClick={() => setCamera(c)}
+              >
+                {strings.playground.cameras[c]}
+              </button>
+            ))}
+          </div>
+          <Button variant="ghost" disabled={!ready} onClick={runPuddleTest}>
+            {strings.puddleTest.run}
+          </Button>
+          <label className="chip">
+            <input
+              type="checkbox"
+              checked={showForces}
+              onChange={(e) => setShowForces(e.currentTarget.checked)}
+            />
+            {strings.playground.showForces}
+          </label>
+        </div>
+        {puddleTest && (
+          <PuddleTestPanel t={sim.telemetry} onRunAgain={runPuddleTest} onEnd={endPuddleTest} />
+        )}
         <TelemetryPanel t={sim.telemetry} tau={calibration ? tau : null} governorOn={governorOn} />
       </section>
       <aside
@@ -635,7 +768,21 @@ export default function Playground() {
           </details>
         )}
       </aside>
-      {toast && (
+      {crash && (
+        <div
+          role="status"
+          className="fixed bottom-6 left-1/2 z-30 flex w-[min(92vw,560px)] -translate-x-1/2 flex-wrap items-center gap-3 rounded-panel border border-line bg-asphalt-800 px-4 py-3 text-[14px] text-paint"
+        >
+          <p className="min-w-0 flex-1">{crash}</p>
+          <Button variant="primary" onClick={restartLap}>
+            {strings.playground.restart}
+          </Button>
+          <Button variant="ghost" onClick={() => setCrashSeen(crashCount)}>
+            {strings.playground.dismiss}
+          </Button>
+        </div>
+      )}
+      {toast && !crash && (
         <div
           role="status"
           className="fixed bottom-6 left-1/2 z-30 -translate-x-1/2 rounded-panel border border-line bg-asphalt-800 px-4 py-3 text-[14px] text-paint"

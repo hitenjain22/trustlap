@@ -90,6 +90,8 @@ export const strings = {
       ['R', 'Restart lap'],
       ['N', 'New track'],
       ['D', 'Draw a track'],
+      ['C', 'Switch camera (overview / chase)'],
+      ['F', 'Show tire forces'],
       ['1–4', 'Student, blind, teacher, scripted'],
       ['?', 'Show these shortcuts'],
     ] as [string, string][],
@@ -106,8 +108,46 @@ export const strings = {
     governorThreshold: 'Risk threshold',
     canvasLabel: 'A self-taught car driving on the selected track, with a scripted ghost car.',
     drawTrack: 'Draw a track',
+    crashes: 'Crashes',
+    camera: 'Camera',
+    cameras: { overview: 'Overview', chase: 'Chase' },
+    showForces: 'Show tire forces',
+    crashToast: (c: {
+      kmh: number
+      driver: string
+      puddle: boolean
+      corner: boolean
+      spun: boolean
+      stalled: boolean
+      wet: boolean
+      governor: 'on' | 'off' | null
+    }) => {
+      if (c.stalled) return `The ${c.driver} car stalled and stopped moving.`
+      const how = c.spun ? 'Spun out' : 'Went off the track'
+      const why = c.puddle ? ' after hitting a puddle' : c.wet ? ' on a wet road' : ''
+      const where = c.corner ? ' mid-corner' : ' on a straight'
+      const gov = c.governor === null ? '' : ` The safety governor was ${c.governor}.`
+      return `${how} at ${c.kmh} km/h${why}${where}.${gov}`
+    },
+    dismiss: 'Dismiss',
     drawnTrack: 'Your drawn track',
     drawnNoLink: 'Drawn tracks can’t be shared by link yet. The link keeps everything else.',
+  },
+  puddleTest: {
+    run: 'Run the puddle test',
+    track: 'Puddle test straight',
+    title: 'Puddle test',
+    body: 'The student drives down a long straight at half speed and crosses one puddle (grip × 0.4). Does its grip estimate drop while it’s on the puddle? Scored with the same rule as the evaluation.',
+    chartLabel: 'Rear grip since the test started: true grip and the student’s estimate.',
+    truth: 'True rear grip',
+    estimate: 'Student’s estimate',
+    waiting: 'Driving toward the puddle…',
+    noticed: (ms: number) => `Noticed the slippery patch in ${ms} ms.`,
+    missed:
+      'Didn’t notice the slippery patch: its estimate didn’t drop by half the true drop while it was on the puddle. That matches the evaluation (Results).',
+    noEstimate: 'This driver doesn’t estimate grip. The puddle test needs the student.',
+    runAgain: 'Run again',
+    end: 'End the puddle test',
   },
   drawTrack: {
     title: 'Draw a track',

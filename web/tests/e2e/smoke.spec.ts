@@ -116,6 +116,19 @@ test('playground: draw a loop, validate it, race on it', async ({ page }) => {
   await expect(dialog).toHaveCount(0)
 })
 
+test('playground: the puddle test drives into a puddle and scores the result', async ({ page }) => {
+  test.setTimeout(75_000)
+  await page.goto('/playground')
+  await page.getByRole('button', { name: 'Run the puddle test' }).click({ timeout: 15_000 })
+  await expect(page.getByLabel('Track').and(page.getByRole('combobox'))).toHaveValue('')
+  // Either verdict is fine here; which one it is comes from the trained student.
+  await expect(
+    page.getByRole('status').filter({ hasText: /Noticed the slippery patch|Didn’t notice/ }),
+  ).toBeVisible({ timeout: 50_000 })
+  await page.getByRole('button', { name: 'End the puddle test' }).click()
+  await expect(page.getByRole('heading', { name: 'Puddle test' })).toHaveCount(0)
+})
+
 test('unknown routes show the not-found page via the SPA fallback', async ({ page }) => {
   await page.goto('/no-such-page')
   await expect(page.getByRole('heading', { level: 1 })).toContainText('drove off the track')

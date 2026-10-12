@@ -9,6 +9,7 @@ import {
   DRIVER_KINDS,
   HEADER,
   STRIDE,
+  type DriverKind,
   type TrackGeometry,
 } from '../worker/protocol.ts'
 import { fitCamera, type Camera } from './camera.ts'
@@ -16,12 +17,16 @@ import { carScale, drawCars, drawHeadlights, type CarPose } from './layers/cars.
 import { drawPuddles } from './layers/puddles.ts'
 import { RainLayer } from './layers/rain.ts'
 import { SkidLayer } from './layers/skids.ts'
+import { drawForces, drawHalo, drawLabels } from './layers/overlays.ts'
 import { drawStatic, edgePath, trackPath } from './layers/static.ts'
 import { readPalette, withAlpha, type Palette } from './palette.ts'
 
 const STEP_MS = 50
 const INTRO_MS = 900
 const SKID_LIFETIME_MS = 60_000
+const CHASE_ZOOM = 3 // at least × the overview scale (SPEC 11.7) …
+const CHASE_VIEW_M = 160 // … and close enough that the canvas spans at most this many meters
+const CHASE_OMEGA = 5 // rad/s: critically damped follow, settles in about a second
 
 export interface RendererOptions {
   reducedMotion: boolean
@@ -67,6 +72,15 @@ export class Renderer {
   windX = 0
   activePuddles = 0
   speed = 1
+  /** Overview fits the track; Chase follows the focused car, north-up (SPEC 11.7). */
+  camera: 'overview' | 'chase' = 'overview'
+  /** Tire-force arrows on the focused car. */
+  showForces = false
+  /** Confidence halo when the focused car's crash risk passes this (null = off). */
+  haloTau: number | null = null
+  /** Driver names for Chase-camera labels. */
+  labels: Record<DriverKind, string> | null = null
+  private chase = { x: 0, y: 0, vx: 0, vy: 0, live: false }
   /** Recycled snapshot buffers go back to the worker through this. */
   onRecycle: ((buf: Float32Array) => void) | null = null
 
@@ -254,17 +268,70 @@ export class Renderer {
         this.cam,
       )
     }
-    ctx.drawImage(this.background, 0, 0)
-
-    drawPuddles(ctx, geo, this.activePuddles, this.rain, this.cam, this.pal, now, motion)
     this.interpolatedPoses()
+    const focusIndex = this.poses.findIndex((p) => p.focused)
+    const focus = focusIndex >= 0 ? this.poses[focusIndex]! : null
+
+    // Camera: the cached overview background, or the chase view drawn fresh each frame.
+    let cam = this.cam
+    if (this.camera === 'chase' && focus) {
+      cam = this.chaseCamera(focus, Math.min(dt, 100) / 1000, w, h)
+      drawStatic(ctx, geo, cam, this.pal, w, h)
+      if (this.rain > 0) {
+        ctx.fillStyle = withAlpha(this.pal.grip4, 0.08 * this.rain)
+        ctx.fill(trackPath(geo, cam))
+      }
+    } else {
+      this.chase.live = false
+      ctx.drawImage(this.background, 0, 0)
+    }
+
+    drawPuddles(ctx, geo, this.activePuddles, this.rain, cam, this.pal, now, motion)
 
     const dpr = w / Math.max(1, this.canvas.clientWidth)
-    const k = carScale(this.cam, dpr)
-    if (this.rain > 0.3) drawHeadlights(ctx, this.poses, this.cam, this.pal, k)
-    drawCars(ctx, this.poses, this.cam, this.pal, k, dpr, this.opts.showFocus)
+    const k = carScale(cam, dpr)
+    if (this.rain > 0.3) drawHeadlights(ctx, this.poses, cam, this.pal, k)
+    drawCars(ctx, this.poses, cam, this.pal, k, dpr, this.opts.showFocus)
+
+    if (focus && curr && focus.alpha === 1) {
+      const o = HEADER + focusIndex * STRIDE
+      const p = curr[o + CarField.PCrash]!
+      if (this.haloTau !== null && p > this.haloTau) {
+        drawHalo(ctx, focus, cam, this.pal, k, dpr, now, motion)
+      }
+      if (this.showForces) {
+        drawForces(
+          ctx,
+          focus,
+          curr.subarray(o + CarField.FxFront, o + CarField.FyRear + 1),
+          cam,
+          this.pal,
+          k,
+          dpr,
+        )
+      }
+    }
+    if (this.camera === 'chase' && this.labels) {
+      drawLabels(ctx, this.poses, this.labels, cam, this.pal, dpr)
+    }
 
     this.rainLayer.draw(ctx, this.rain, this.windX, motion ? Math.min(dt, 50) : 0, this.pal)
+  }
+
+  /** North-up camera (3× the overview zoom, or closer on big tracks), following `car` with critically damped smoothing. */
+  private chaseCamera(car: CarPose, dtS: number, w: number, h: number): Camera {
+    const c = this.chase
+    if (!c.live || Math.hypot(car.x - c.x, car.y - c.y) > 80) {
+      Object.assign(c, { x: car.x, y: car.y, vx: 0, vy: 0, live: true }) // start or respawn: snap
+    } else {
+      const w2 = CHASE_OMEGA * CHASE_OMEGA
+      c.vx += (w2 * (car.x - c.x) - 2 * CHASE_OMEGA * c.vx) * dtS
+      c.vy += (w2 * (car.y - c.y) - 2 * CHASE_OMEGA * c.vy) * dtS
+      c.x += c.vx * dtS
+      c.y += c.vy * dtS
+    }
+    const scale = Math.max(this.cam.scale * CHASE_ZOOM, w / CHASE_VIEW_M)
+    return { scale, ox: w / 2 - c.x * scale, oy: h / 2 + c.y * scale }
   }
 
   private trackFrameTime(dt: number): void {

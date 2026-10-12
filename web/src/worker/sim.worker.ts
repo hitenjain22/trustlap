@@ -14,17 +14,19 @@ import type { SimConfig } from '../sim/config.ts'
 import {
   layoutPuddles,
   nominalConditions,
+  puddleGrip,
   puddlesForRain,
   setActivePuddles,
   setRain,
   type Conditions,
 } from '../sim/conditions.ts'
-import { axleGrip } from '../sim/dynamics.ts'
+import { axleGrip, lastTireForces } from '../sim/dynamics.ts'
 import {
   coreStep,
   createEnvState,
   createObservation,
   createStepInfo,
+  curvatureAt,
   observe,
   placePuddles,
   resetEnvState,
@@ -36,12 +38,15 @@ import { scriptedAction } from '../sim/scripted.ts'
 import {
   buildTrack as splineTrack,
   generateTrack,
+  stadiumTrack,
   toTrackData,
   type TrackData,
 } from '../sim/track.ts'
 import {
   CarField,
   CarFlag,
+  CrashCause,
+  PUDDLE_TEST,
   DRIVER_KINDS,
   HEADER,
   STRIDE,
@@ -53,6 +58,9 @@ import {
 } from './protocol.ts'
 
 const STEP_MS = 50
+const PUDDLE_FIELD = 0.85 // an axle is "in a puddle" where the puddle field cuts grip by 15%+
+const PUDDLE_MEMORY_STEPS = 30 // a crash within 1.5 s of a puddle is blamed on it
+const CORNER_RADIUS_M = 150 // tighter than this counts as "mid-corner"
 const GOVERNOR_RAMP = 0.2 // same constants as sim/trustlap/confidence.py
 const GOVERNOR_BRAKE = -0.4
 const MAX_CATCH_UP = 4
@@ -81,6 +89,12 @@ interface Driver {
   /** Per-car spread of power and mass (a field of one driver) so identical drivers don't lockstep. */
   powerScale: number
   massScale: number
+  /** Tire forces after the last step (body frame, N) and the most recent crash. */
+  forces: Float32Array
+  lastPuddleStep: number // last step with an axle in a puddle (grip field < 0.85)
+  crashSpeed: number
+  crashCause: number
+  crashCount: number
 }
 
 let cfg: SimConfig
@@ -97,6 +111,7 @@ let governor = { on: false, tau: 0.2 }
 let pending: Partial<ConditionValues> = {} // changes that arrived before init
 let pendingTrack: number | null = null
 let customTrack: { points: Float64Array; widthM: number } | null = null
+let puddleTest = false // cars start at 20 m/s at the stadium's s = 0
 let paused = false
 let simStep = 0
 let crashes = 0
@@ -170,6 +185,17 @@ async function ensurePolicies(kinds: DriverKind[]): Promise<void> {
   }
 }
 
+/** Puddle grip field under the front and rear axle (1 = no puddle). */
+function axlePuddle(state: EnvState): [number, number] {
+  const car = state.car
+  const c = Math.cos(car.yawRad)
+  const s = Math.sin(car.yawRad)
+  return [
+    puddleGrip(car.xM + cfg.car.lf_m * c, car.yM + cfg.car.lf_m * s, state.cond),
+    puddleGrip(car.xM - cfg.car.lr_m * c, car.yM - cfg.car.lr_m * s, state.cond),
+  ]
+}
+
 /** Calibrated crash probability from ensemble disagreement (piecewise-linear table). */
 function crashProbability(u: number): number {
   const table = opts.calibration
@@ -189,6 +215,7 @@ function buildTrack(
   seed: number,
   custom?: { points: Float64Array; widthM: number },
 ): TrackGeometry {
+  puddleTest = false
   trackSeed = custom ? -1 : seed
   track = toTrackData(
     custom
@@ -261,7 +288,12 @@ function placeCars(): void {
     // Ghosts start exactly with the first car so they race it like for like.
     const slot = ghost ? 0 : i
     const startS = spread ? (slot * track.lengthM) / n : -Math.floor(slot / 2) * GRID_ROW_M
-    resetEnvState(state, track, startS, spread ? 15 : cfg.episode.eval_speed_mps)
+    const startSpeed = puddleTest
+      ? PUDDLE_TEST.startSpeedMps
+      : spread
+        ? 15
+        : cfg.episode.eval_speed_mps
+    resetEnvState(state, track, puddleTest ? 0 : startS, startSpeed)
     if (!spread && n > 1 && !ghost) {
       // Two-wide grid: even slots on the right, odd on the left.
       const side = slot % 2 === 0 ? -1 : 1
@@ -282,6 +314,11 @@ function placeCars(): void {
       lastAction: new Float32Array(2),
       muHat: new Float32Array([NaN, NaN]),
       uncertainty: NaN,
+      forces: new Float32Array(4),
+      lastPuddleStep: -1e9,
+      crashSpeed: NaN,
+      crashCause: 0,
+      crashCount: 0,
       ...scales,
     }
   })
@@ -385,7 +422,10 @@ function step(): void {
     const gusty = d.state.cond.gustSigmaMps > 0
     const gx = gusty ? rng.nextNormal() : 0
     const gy = gusty ? rng.nextNormal() : 0
+    const speedBefore = Math.hypot(d.state.car.vxMps, d.state.car.vyMps)
     coreStep(d.state, action[0]!, action[1]!, gx, gy, track, cfg, info)
+    d.forces.set(lastTireForces)
+    if (Math.min(...axlePuddle(d.state)) < PUDDLE_FIELD) d.lastPuddleStep = simStep
     d.lastAction[0] = d.state.prevAction[0]!
     d.lastAction[1] = d.state.prevAction[1]!
     if (info.lapCompleted) {
@@ -399,6 +439,15 @@ function step(): void {
     } else if (info.terminated) {
       d.respawnIn = RESPAWN_STEPS
       if (!d.ghost) crashes++
+      d.crashCount++
+      d.crashSpeed = speedBefore
+      d.crashCause =
+        (simStep - d.lastPuddleStep <= PUDDLE_MEMORY_STEPS ? CrashCause.Puddle : 0) |
+        (Math.abs(curvatureAt(track, d.state.sM)) > 1 / CORNER_RADIUS_M ? CrashCause.Corner : 0) |
+        (info.stalled ? CrashCause.Stalled : 0) |
+        (!info.stalled && !info.wrongWay && d.state.spinSteps > 0 ? CrashCause.Spun : 0) |
+        (values.rain >= 0.3 ? CrashCause.Wet : 0) |
+        (d.kind === 'student' && governor.on ? CrashCause.GovernorOn : 0)
     }
     if (d.state.steps >= cfg.episode.max_steps - 1) d.state.steps = 0 // no time limit in the browser
   }
@@ -441,6 +490,13 @@ function snapshot(): Float32Array {
     buf[o + CarField.LapTime] = ((simStep - d.lapStart) * STEP_MS) / 1000
     buf[o + CarField.BestLap] = d.bestLap
     buf[o + CarField.LastLap] = d.lastLap
+    buf[o + CarField.FxFront] = d.forces[0]!
+    buf[o + CarField.FyFront] = d.forces[1]!
+    buf[o + CarField.FxRear] = d.forces[2]!
+    buf[o + CarField.FyRear] = d.forces[3]!
+    buf[o + CarField.CrashSpeed] = d.crashSpeed
+    buf[o + CarField.CrashCause] = d.crashCause
+    buf[o + CarField.Crashes] = d.crashCount
   })
   return buf
 }
@@ -504,6 +560,30 @@ const api: SimApi = {
     const geo = buildTrack(seed)
     placeCars()
     return geo
+  },
+  async setCarCount(nCars, layout) {
+    opts = { ...opts, nCars, layout }
+    if (ready) placeCars()
+  },
+  async startPuddleTest() {
+    if (!ready) return null
+    customTrack = null
+    puddleTest = true
+    opts = { ...opts, driver: 'student', ghosts: [] }
+    values = { ...defaults(cfg), puddles: 1 }
+    trackSeed = -1
+    track = toTrackData(stadiumTrack(cfg.track))
+    shared = nominalConditions(cfg)
+    layoutPuddles(shared, 0, track.lengthM, track.widthM, cfg)
+    shared.puddleSM[0] = PUDDLE_TEST.puddleSM
+    shared.puddleLateralM[0] = 0
+    shared.puddleMult[0] = PUDDLE_TEST.mult
+    shared.puddleRadiusM[0] = PUDDLE_TEST.radiusM
+    placePuddles(shared, track, 0)
+    setActivePuddles(shared, 1)
+    await ensurePolicies(['student'])
+    placeCars()
+    return geometry()
   },
   async setCustomTrack(points, widthM) {
     customTrack = { points, widthM }

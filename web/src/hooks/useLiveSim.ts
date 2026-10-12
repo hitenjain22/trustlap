@@ -66,8 +66,20 @@ export interface Telemetry {
   steer: number
   long: number
   crashed: boolean
-  /** Last 10 s (100 samples): speed, true and estimated rear grip, crash risk. */
-  history: { speed: number[]; muRear: number[]; muHatRear: number[]; pCrash: number[] }
+  /** The focused car's crash count, speed (m/s) and cause flags at its latest crash. */
+  crash: { count: number; speedMps: number; cause: number }
+  /** Crashes per driver kind (focused car and ghosts). */
+  crashesByDriver: Partial<Record<DriverKind, number>>
+  /** Tire forces of the focused car, body frame (N): front x/y, rear x/y. */
+  forces: [number, number, number, number]
+  /** Last 10 s (100 samples): sim time (s), speed, true and estimated rear grip, crash risk. */
+  history: {
+    t: number[]
+    speed: number[]
+    muRear: number[]
+    muHatRear: number[]
+    pCrash: number[]
+  }
 }
 
 const HISTORY = 100
@@ -117,7 +129,6 @@ export function useLiveSim(opts: LiveSimOptions) {
     })
     const api = Comlink.wrap<SimApi>(worker)
     apiRef.current = api
-    let cfgRef: SimConfig | null = null
     let students = 0
     let calibration: Calibration | null = null
     // Built from the latest conditions and drivers, so a restart (slow device) keeps them.
@@ -142,18 +153,17 @@ export function useLiveSim(opts: LiveSimOptions) {
       checkpoint: o.checkpoint,
       calibration: calibration ? { u: calibration.u, p: calibration.p } : undefined,
     })
-    let trackSeed = 0
     const renderer = new Renderer(canvas, {
       reducedMotion: reduced,
       showFocus: o.showFocus ?? false,
       fitInsetLeft: o.fitInsetLeft,
       onSlow: () => {
         // Halve the work on slow devices (SPEC 10.3) by restarting with half the cars.
-        if (!cfgRef) return
+        // Keeps whatever track is showing (a new, drawn or puddle-test track included).
         renderer.degrade()
         const half = Math.max(1, Math.floor(o.nCars / 2))
-        void api.init(initArgs(cfgRef, trackSeed, half, 'spread')).then((geo) => {
-          renderer.setTrack(geo, false)
+        if (half === o.nCars) return // nothing to drop (e.g. the Playground's single car)
+        void api.setCarCount(half, 'spread').then(() => {
           setStatus((s) => ({ ...s, cars: half, degraded: true }))
         })
       },
@@ -172,8 +182,6 @@ export function useLiveSim(opts: LiveSimOptions) {
 
     Promise.all([loadSimConfig(), Promise.resolve(o.trackSeed), loadManifest(), loadCalibration()])
       .then(async ([cfg, seed, manifest, cal]) => {
-        cfgRef = cfg
-        trackSeed = seed
         calibration = cal
         const files = manifest.files.map((f) => f.path)
         students = studentCount(files)
@@ -265,6 +273,26 @@ export function useLiveSim(opts: LiveSimOptions) {
     setStatus((s) => ({ ...s, track: geo, crashes: 0, leaderLap: 1 }))
   }, [])
 
+  const startPuddleTest = useCallback(async () => {
+    const api = apiRef.current
+    const renderer = rendererRef.current
+    if (!api || !renderer) return
+    const geo = await api.startPuddleTest()
+    if (!geo) return
+    renderer.setTrack(geo, false)
+    setTelemetry(null) // fresh history for the test chart
+    setStatus((s) => ({ ...s, track: geo, crashes: 0, leaderLap: 1 }))
+  }, [])
+
+  /** Renderer-only view options: camera, tire-force arrows, confidence halo, chase labels. */
+  const setView = useCallback(
+    (v: Partial<Pick<Renderer, 'camera' | 'showForces' | 'haloTau' | 'labels'>>) => {
+      const renderer = rendererRef.current
+      if (renderer) Object.assign(renderer, v)
+    },
+    [],
+  )
+
   const control = useCallback(async (action: 'pause' | 'resume' | 'reset') => {
     const api = apiRef.current
     if (!api) return
@@ -298,6 +326,8 @@ export function useLiveSim(opts: LiveSimOptions) {
     setConditions,
     setTrack,
     setCustomTrack,
+    setView,
+    startPuddleTest,
     control,
     setSpeed,
     setDrivers,
@@ -324,7 +354,13 @@ function readTelemetry(snap: Float32Array, prev: Telemetry | null): Telemetry {
     }
   }
   const f = (k: number) => snap[HEADER + k]!
-  const h = prev?.history ?? { speed: [], muRear: [], muHatRear: [], pCrash: [] }
+  const crashesByDriver: Partial<Record<DriverKind, number>> = {}
+  for (let i = 0; i < n; i++) {
+    const o = HEADER + i * STRIDE
+    const kind = DRIVER_KINDS[snap[o + CarField.Driver]!] ?? 'scripted'
+    crashesByDriver[kind] = (crashesByDriver[kind] ?? 0) + snap[o + CarField.Crashes]!
+  }
+  const h = prev?.history ?? { t: [], speed: [], muRear: [], muHatRear: [], pCrash: [] }
   return {
     kind: DRIVER_KINDS[f(CarField.Driver)] ?? 'scripted',
     speedMps: f(CarField.Speed),
@@ -340,7 +376,15 @@ function readTelemetry(snap: Float32Array, prev: Telemetry | null): Telemetry {
     steer: f(CarField.Steer),
     long: f(CarField.Long),
     crashed: (f(CarField.Flags) & CarFlag.Crashed) !== 0,
+    crash: {
+      count: f(CarField.Crashes),
+      speedMps: f(CarField.CrashSpeed),
+      cause: f(CarField.CrashCause),
+    },
+    crashesByDriver,
+    forces: [f(CarField.FxFront), f(CarField.FyFront), f(CarField.FxRear), f(CarField.FyRear)],
     history: {
+      t: push(h.t, snap[0]!),
       speed: push(h.speed, f(CarField.Speed)),
       muRear: push(h.muRear, f(CarField.MuRear)),
       muHatRear: push(h.muHatRear, f(CarField.MuHatRear)),

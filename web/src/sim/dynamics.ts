@@ -95,6 +95,12 @@ export function lateralTireForce(
 const clip = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi)
 const grip = new Float64Array(2)
 
+/**
+ * Tire forces from the most recent substep, body frame (N): [fxFront, fyFront, fxRear, fyRear].
+ * Read-only telemetry for the tire-force arrows; nothing in the physics reads it back.
+ */
+export const lastTireForces = new Float64Array(4)
+
 /** Advance one car by one physics substep (12.5 ms). Actions arrive delayed and clipped. */
 export function substep(
   car: CarState,
@@ -168,6 +174,10 @@ export function substep(
   // 9. Body-frame equations of motion.
   const cosD = Math.cos(delta)
   const sinD = Math.sin(delta)
+  lastTireForces[0] = fxF * cosD - fyF * sinD
+  lastTireForces[1] = fyF * cosD + fxF * sinD
+  lastTireForces[2] = fxR
+  lastTireForces[3] = fyR
   const vxDot = (fxR + fxF * cosD - fyF * sinD + fDrag + fRoll) / mass + vy * r
   const vyDot = (fyR + fyF * cosD + fxF * sinD + fSide) / mass - vx * r
   const rDot =

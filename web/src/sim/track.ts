@@ -551,3 +551,51 @@ export function autoFixDrawing(drawn: DrawnTrack, cfg: TrackConfig): DrawnTrack 
   }
   return result
 }
+
+/** numpy.arange(start, stop, step) for a positive or negative step. */
+function arange(start: number, stop: number, step: number): number[] {
+  const n = Math.max(0, Math.ceil((stop - start) / step))
+  return Array.from({ length: n }, (_, i) => start + i * step)
+}
+
+/**
+ * The step-response test track, ported from `evaluate.stadium_bank` (sim/trustlap/evaluate.py):
+ * two long straights joined by semicircles, sampled every `ds_target_m`. Arclength 0 is the
+ * start of the bottom straight, heading +x.
+ */
+export function stadiumTrack(cfg: TrackConfig, straightM = 700, radiusM = 100, widthM = 12): Track {
+  const ds = cfg.ds_target_m
+  const pts: number[] = []
+  for (const x of arange(0, straightM, ds)) pts.push(x, -radiusM)
+  for (const a of arange(-Math.PI / 2, Math.PI / 2, ds / radiusM)) {
+    pts.push(straightM + radiusM * Math.cos(a), radiusM * Math.sin(a))
+  }
+  for (const x of arange(straightM, 0, -ds)) pts.push(x, radiusM)
+  for (const a of arange(Math.PI / 2, (3 * Math.PI) / 2, ds / radiusM)) {
+    pts.push(radiusM * Math.cos(a), radiusM * Math.sin(a))
+  }
+  const centerline = Float64Array.from(pts)
+  const n = centerline.length / 2
+  let length = 0
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n
+    length += Math.hypot(
+      centerline[2 * j]! - centerline[2 * i]!,
+      centerline[2 * j + 1]! - centerline[2 * i + 1]!,
+    )
+  }
+  const { tangent, normal, curvature } = frames(centerline, length / n, cfg.curvature_smooth_window)
+  return {
+    seed: 0,
+    attempt: 0,
+    smoothIters: 0,
+    controlPoints: new Float64Array(0),
+    centerline,
+    tangent,
+    normal,
+    curvature,
+    widthM,
+    lengthM: length,
+    nPoints: n,
+  }
+}

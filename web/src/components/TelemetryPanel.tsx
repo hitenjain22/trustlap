@@ -6,6 +6,7 @@
 import { useState } from 'react'
 import { strings } from '../copy/strings.ts'
 import type { Telemetry } from '../hooks/useLiveSim.ts'
+import type { DriverKind } from '../worker/protocol.ts'
 
 const T = strings.telemetry
 const MU_MAX = 1.3
@@ -147,6 +148,12 @@ export function TelemetryPanel({
           <dd className="numeral text-paint">{t.crashed ? T.crashed : fmtLap(t.lapTime)}</dd>
           <dt className="text-text-3">{T.best}</dt>
           <dd className="numeral text-paint">{fmtLap(t.bestLap)}</dd>
+          <dt className="text-text-3">{strings.playground.crashes}</dt>
+          <dd className="text-paint">
+            {Object.entries(t.crashesByDriver)
+              .map(([k, v]) => `${strings.playground.drivers[k as DriverKind]} ${v}`)
+              .join(' · ')}
+          </dd>
           {Number.isFinite(delta) && (
             <>
               <dt className="text-text-3">{T.delta}</dt>

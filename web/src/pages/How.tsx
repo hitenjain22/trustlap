@@ -1,147 +1,229 @@
 /**
- * How it works (SPEC 10.2): pipeline diagram, one section per component (what / why / measured /
- * borrowed from), model card, limitations and how to reproduce. Credits per SPEC 17.
+ * How it works (SPEC 10.2), as a numbered walk-through: five plain steps, each with one number
+ * read from the artifacts and the technical write-up folded underneath. The model card and the
+ * reproduction commands sit at the end. Deep link: /how-it-works#step-3.
  */
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { REPO_URL, strings } from '../copy/strings.ts'
+import {
+  benchHeadline,
+  loadBench,
+  loadMetrics,
+  loadSimConfig,
+  type Bench,
+} from '../data/artifacts.ts'
+import type { Metrics } from '../data/schemas.ts'
+import type { SimConfig } from '../sim/config.ts'
 
 const H = strings.how
-const STAGES = H.pipeline
+const STEPS = H.steps
 
-function Pipeline() {
-  const w = 1040
-  const box = { w: 150, h: 64 }
-  const gap = (w - STAGES.length * box.w) / (STAGES.length - 1)
-  return (
-    <svg viewBox={`0 0 ${w} 96`} className="w-full" role="img" aria-label={H.pipelineLabel}>
-      <defs>
-        <marker
-          id="arrow"
-          viewBox="0 0 10 10"
-          refX="9"
-          refY="5"
-          markerWidth="7"
-          markerHeight="7"
-          orient="auto"
-        >
-          <path d="M0 0L10 5L0 10z" fill="var(--text-3)" />
-        </marker>
-      </defs>
-      {STAGES.map((stage, i) => {
-        const x = i * (box.w + gap)
-        return (
-          <g key={stage}>
-            <rect
-              x={x}
-              y={16}
-              width={box.w}
-              height={box.h}
-              rx={10}
-              fill="var(--asphalt-800)"
-              stroke={i === STAGES.length - 1 ? 'var(--sodium)' : 'var(--line)'}
-            />
-            <text
-              x={x + box.w / 2}
-              y={53}
-              textAnchor="middle"
-              className="fill-[var(--paint)] text-[15px] font-[560]"
-            >
-              {stage}
-            </text>
-            {i < STAGES.length - 1 && (
-              <line
-                x1={x + box.w + 4}
-                x2={x + box.w + gap - 6}
-                y1={48}
-                y2={48}
-                stroke="var(--text-3)"
-                strokeWidth={1.5}
-                markerEnd="url(#arrow)"
-              />
-            )}
-          </g>
-        )
-      })}
-    </svg>
-  )
+function stepFromHash(): number {
+  const n = Number(/step-(\d)/.exec(window.location.hash)?.[1] ?? 1)
+  return Math.min(STEPS.length, Math.max(1, n)) - 1
 }
 
 export default function How() {
+  const [step, setStep] = useState(stepFromHash)
+  const [metrics, setMetrics] = useState<Metrics | null>(null)
+  const [bench, setBench] = useState<Bench | null>(null)
+  const [cfg, setCfg] = useState<SimConfig | null>(null)
+  useEffect(() => {
+    const onHash = () => setStep(stepFromHash())
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [])
+  useEffect(() => {
+    loadMetrics().then(setMetrics, () => setMetrics(null))
+    loadBench().then(setBench, () => setBench(null))
+    loadSimConfig().then(setCfg, () => setCfg(null))
+  }, [])
+  const go = (i: number) => {
+    setStep(i)
+    window.history.replaceState(null, '', `#step-${i + 1}`)
+  }
+
+  // The one number per step, from metrics.json / bench.json / config.json (null = not available).
+  const h = metrics?.headline
+  const bh = bench ? benchHeadline(bench) : null
+  const stat = (() => {
+    switch (step) {
+      case 0:
+        return bh
+          ? STEPS[0].stat(
+              bh.maxCars.toLocaleString('en-US'),
+              Math.round(bh.speedup).toLocaleString('en-US'),
+            )
+          : null
+      case 1:
+        return h?.train_env_steps_total != null && h.train_wall_minutes != null
+          ? STEPS[1].stat(
+              h.train_env_steps_total >= 1e9
+                ? `${(h.train_env_steps_total / 1e9).toFixed(1)} billion`
+                : `${Math.round(h.train_env_steps_total / 1e6)} million`,
+              Math.round(h.train_wall_minutes).toString(),
+            )
+          : null
+      case 2:
+        return h?.grip_mae != null && cfg
+          ? STEPS[2].stat(
+              h.grip_mae.toFixed(2),
+              cfg.conditions.mu_dry.nominal.toFixed(1),
+              cfg.conditions.mu_dry.ood.toFixed(2),
+            )
+          : null
+      case 3:
+        return metrics?.calibration?.ece != null
+          ? STEPS[3].stat(metrics.calibration.ece.toFixed(3))
+          : null
+      case 4:
+        return metrics?.protocol?.test_tracks && metrics.suites
+          ? STEPS[4].stat(
+              String(metrics.protocol.test_tracks),
+              String(Object.keys(metrics.suites).length),
+            )
+          : null
+      default:
+        return null
+    }
+  })()
+  const s = STEPS[step]!
+  const details = H.components.filter((c) => (s.components as readonly string[]).includes(c.id))
+
   return (
-    <div className="mx-auto max-w-[1280px] px-4 py-12 md:px-6 md:py-16">
+    <div className="mx-auto max-w-[1080px] px-4 py-12 md:px-6 md:py-16">
       <h1 className="text-[40px] leading-[1.08] font-bold [font-stretch:118%] md:text-[49px]">
         {H.title}
       </h1>
-      <p className="mt-3 max-w-[72ch] text-text-2">{H.intro}</p>
-      <div className="mt-10 overflow-x-auto">
-        <div className="min-w-[640px]">
-          <Pipeline />
-        </div>
-      </div>
+      <p className="mt-3 max-w-[68ch] text-text-2">{H.lead}</p>
 
-      <div className="mt-12 flex flex-col gap-12">
-        {H.components.map((c) => (
-          <section
-            key={c.title}
-            className="grid gap-4 border-t border-line pt-6 md:grid-cols-[260px_1fr]"
-            aria-labelledby={c.id}
-          >
-            <h2 id={c.id} className="h3">
-              {c.title}
-            </h2>
-            <dl className="grid max-w-[72ch] gap-4">
-              {(
-                [
-                  [H.labels.what, c.what],
-                  [H.labels.why, c.why],
-                  [H.labels.measured, c.measured],
-                  [H.labels.borrowed, c.borrowed],
-                ] as const
-              ).map(([k, v]) => (
-                <div key={k}>
-                  <dt className="label">{k}</dt>
-                  <dd className="mt-1 text-text-2">{v}</dd>
+      <ol className="mt-10 grid grid-cols-2 gap-2 sm:grid-cols-5" aria-label={H.title}>
+        {STEPS.map((x, i) => (
+          <li key={x.tab}>
+            <button
+              type="button"
+              aria-current={i === step ? 'step' : undefined}
+              onClick={() => go(i)}
+              className={`flex min-h-12 w-full items-center gap-2 rounded-control border px-3 text-left text-[14px] font-[560] transition-colors ${
+                i === step
+                  ? 'border-sodium bg-asphalt-800 text-paint'
+                  : 'border-line text-text-2 hover:text-paint'
+              }`}
+            >
+              <span
+                className={`grid size-6 shrink-0 place-items-center rounded-full text-[12px] ${
+                  i === step ? 'bg-sodium text-sodium-ink' : 'bg-asphalt-700 text-text-2'
+                }`}
+              >
+                {i + 1}
+              </span>
+              {x.tab}
+            </button>
+          </li>
+        ))}
+      </ol>
+
+      <section
+        className="mt-8 rounded-panel border border-line bg-asphalt-800 p-6 md:p-8"
+        aria-live="polite"
+      >
+        <p className="label">{`Step ${step + 1} of ${STEPS.length}`}</p>
+        <h2 className="mt-2 text-[28px] leading-tight font-bold text-paint">{s.title}</h2>
+        <div className="mt-4 grid gap-8 md:grid-cols-[1fr_260px]">
+          <div className="flex max-w-[62ch] flex-col gap-3 text-[16px] text-text-2">
+            {s.body.map((p) => (
+              <p key={p}>{p}</p>
+            ))}
+            {'link' in s && s.link && (
+              <p>
+                <Link to={s.link.to} className="text-sodium underline">
+                  {s.link.label}
+                </Link>
+              </p>
+            )}
+          </div>
+          {stat && (
+            <div className="border-line md:border-l md:pl-6">
+              <p className="numeral text-[34px] leading-tight text-paint">{stat.value}</p>
+              <p className="mt-2 text-[14px] text-text-2">{stat.meaning}</p>
+            </div>
+          )}
+        </div>
+
+        {details.length > 0 && (
+          <details className="group mt-8 border-t border-line pt-4">
+            <summary className="cursor-pointer list-none text-[15px] font-[620] text-paint">
+              {H.detailsLabel}
+            </summary>
+            <div className="mt-4 flex flex-col gap-8">
+              {details.map((c) => (
+                <div key={c.id}>
+                  <h3 className="h3">{c.title}</h3>
+                  <dl className="mt-3 grid max-w-[72ch] gap-3">
+                    {(
+                      [
+                        [H.labels.what, c.what],
+                        [H.labels.why, c.why],
+                        [H.labels.measured, c.measured],
+                        [H.labels.borrowed, c.borrowed],
+                      ] as const
+                    ).map(([k, v]) => (
+                      <div key={k}>
+                        <dt className="label">{k}</dt>
+                        <dd className="mt-1 text-[15px] text-text-2">{v}</dd>
+                      </div>
+                    ))}
+                  </dl>
                 </div>
               ))}
-            </dl>
-          </section>
-        ))}
-      </div>
-
-      <section className="mt-16 border-t border-line pt-6" aria-labelledby="card">
-        <h2 id="card" className="h2">
-          {H.card.title}
-        </h2>
-        <dl className="mt-6 grid max-w-[900px] gap-x-8 gap-y-4 md:grid-cols-[200px_1fr]">
-          {H.card.rows.map(([k, v]) => (
-            <div key={k} className="contents">
-              <dt className="label pt-0.5">{k}</dt>
-              <dd className="text-text-2">{v}</dd>
             </div>
-          ))}
-        </dl>
-        <p className="mt-6 text-text-2">
-          {H.card.resultsLead}{' '}
-          <Link to="/results" className="text-sodium underline">
-            {H.card.resultsLink}
-          </Link>
-        </p>
+          </details>
+        )}
+
+        {step < STEPS.length - 1 && (
+          <div className="mt-8">
+            <button
+              type="button"
+              className="inline-flex min-h-11 items-center rounded-control bg-sodium px-4 text-[15px] font-[650] text-sodium-ink hover:bg-[#f5c35f]"
+              onClick={() => go(step + 1)}
+            >
+              {H.next}: {STEPS[step + 1]!.tab}
+            </button>
+          </div>
+        )}
       </section>
 
-      <section className="mt-16 border-t border-line pt-6" aria-labelledby="repro">
-        <h2 id="repro" className="h2">
-          {H.repro.title}
-        </h2>
-        <p className="mt-3 max-w-[72ch] text-text-2">{H.repro.body}</p>
-        <pre className="mt-4 overflow-x-auto rounded-panel border border-line bg-asphalt-800 p-4 text-[13px] leading-6 text-paint">
-          <code>{H.repro.commands}</code>
-        </pre>
-        <p className="mt-4 text-text-2">
-          <a href={REPO_URL} className="text-sodium underline">
-            {H.repro.repo}
-          </a>
-        </p>
-      </section>
+      <details className="group mt-12 rounded-panel border border-line">
+        <summary className="cursor-pointer list-none px-5 py-4 text-[18px] font-[620] text-paint">
+          {H.moreTitle}
+        </summary>
+        <div className="border-t border-line px-5 pb-8">
+          <h2 id="card" className="h2 mt-6">
+            {H.card.title}
+          </h2>
+          <dl className="mt-6 grid max-w-[900px] gap-x-8 gap-y-4 md:grid-cols-[200px_1fr]">
+            {H.card.rows.map(([k, v]) => (
+              <div key={k} className="contents">
+                <dt className="label pt-0.5">{k}</dt>
+                <dd className="text-text-2">{v}</dd>
+              </div>
+            ))}
+          </dl>
+          <h2 id="repro" className="h2 mt-10">
+            {H.repro.title}
+          </h2>
+          <p className="mt-3 max-w-[72ch] text-text-2">{H.repro.body}</p>
+          <pre className="mt-4 overflow-x-auto rounded-panel border border-line bg-asphalt p-4 text-[13px] leading-6 text-paint">
+            <code>{H.repro.commands}</code>
+          </pre>
+          <p className="mt-4 text-text-2">
+            <a href={REPO_URL} className="text-sodium underline">
+              {H.repro.repo}
+            </a>
+          </p>
+        </div>
+      </details>
     </div>
   )
 }

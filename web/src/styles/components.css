@@ -152,20 +152,6 @@
   font-size: 15px;
 }
 
-.status-chip {
-  display: inline-flex;
-  align-items: center;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  padding: 1px 10px;
-  font-size: 13px;
-  color: var(--text-2);
-}
-.status-chip--built {
-  border-color: var(--sodium);
-  color: var(--sodium);
-}
-
 /* Slider: a native range input over a track that shows the training range as a band. */
 .slider__track {
   position: relative;

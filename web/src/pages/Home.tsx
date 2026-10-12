@@ -5,15 +5,9 @@ import { DiceIcon } from '../components/icons.tsx'
 import { LiveCanvas } from '../components/LiveCanvas.tsx'
 import { Slider } from '../components/Slider.tsx'
 import { REPO_URL, strings } from '../copy/strings.ts'
-import {
-  benchHeadline,
-  bestFitTrack,
-  loadBench,
-  loadMetrics,
-  loadShowcase,
-  type Bench,
-} from '../data/artifacts.ts'
+import { bestFitTrack, loadMetrics, loadShowcase } from '../data/artifacts.ts'
 import type { Metrics } from '../data/schemas.ts'
+import { compareConditions, TRAINED_CONDITIONS } from '../data/summary.ts'
 import { useLiveSim } from '../hooks/useLiveSim.ts'
 
 const HERO_CARS = 48
@@ -22,8 +16,6 @@ const PHONE_CARS = 16
 const PHONE_RAIN_STREAKS = 400
 const isPhone = () => window.matchMedia('(max-width: 767px)').matches
 const INITIAL_RAIN = 0.4
-/** Story steps that are live on the site (0-based). */
-const BUILT_STEPS = [0, 1, 2, 3, 4]
 
 /** Home: live hero with self-taught cars + the build story (SPEC 10.2). */
 export default function Home() {
@@ -132,21 +124,19 @@ export default function Home() {
 }
 
 function Story() {
-  const [bench, setBench] = useState<Bench | null>(null)
   const [metrics, setMetrics] = useState<Metrics | null>(null)
   useEffect(() => {
-    loadBench().then(setBench, () => setBench(null))
     loadMetrics().then(setMetrics, () => setMetrics(null))
   }, [])
-  // Only claim a reaction time if the student noticed the puddle in most trials.
-  const lat = metrics?.headline?.puddle_latency_ms
-  const latency =
-    lat?.median != null && (lat.noticed == null || !lat.trials || lat.noticed >= lat.trials / 2)
-      ? lat.median
-      : null
-  const ece = metrics?.calibration?.ece
-  const head = bench ? benchHeadline(bench) : null
-  const steps = strings.story.steps
+  // The answer in one breath, generated from metrics.json (same rule as the Results page).
+  const rows = metrics ? compareConditions(metrics, TRAINED_CONDITIONS) : []
+  const names = (v: 'better' | 'worse') =>
+    rows
+      .filter((r) => r.verdict === v)
+      .map((r) => strings.conditions[r.suite as keyof typeof strings.conditions].name.toLowerCase())
+  const better = names('better')
+  const worse = names('worse')
+  const H = strings.how
   return (
     <section
       className="mx-auto max-w-[1280px] px-4 py-16 md:px-6 md:py-24"
@@ -156,42 +146,36 @@ function Story() {
         {strings.story.title}
       </h2>
       <p className="mt-3 max-w-[68ch] text-text-2">{strings.story.intro}</p>
-      <ol className="mt-12 grid gap-x-12 gap-y-10 md:grid-cols-2">
-        {steps.map((step, i) => {
-          const built = BUILT_STEPS.includes(i)
-          const body =
-            i === 0
-              ? head
-                ? steps[0].body(
-                    head.maxCars.toLocaleString('en-US'),
-                    Math.round(head.speedup).toLocaleString('en-US'),
-                    head.device,
-                  )
-                : steps[0].pending
-              : (step as { body: string }).body
-          return (
-            <li key={step.title} className="border-t border-line pt-6">
-              <p className="flex items-center gap-3 text-[14px] text-text-3">
-                <span className="numeral text-[20px] text-paint">{i + 1}</span>
-                <span className={built ? 'status-chip status-chip--built' : 'status-chip'}>
-                  {built ? strings.story.built : strings.story.inProgress}
-                </span>
-              </p>
-              <h3 className="h3 mt-3">{step.title}</h3>
-              <p className="mt-2 max-w-[52ch] text-text-2">
-                {body}
-                {i === 3 && latency != null && ` ${steps[3].measured(Math.round(latency))}`}
-                {i === 4 && ece != null && ` ${steps[4].measured(ece.toFixed(3))}`}
-              </p>
-              {i === 0 && bench && (
-                <p className="mt-3 text-[13px] text-text-3">
-                  {strings.story.benchSource(bench.created_utc.slice(0, 10), bench.git_sha)}
-                </p>
-              )}
-            </li>
-          )
-        })}
+      <ol className="mt-10 grid gap-4 md:grid-cols-5">
+        {H.steps.map((step, i) => (
+          <li key={step.tab} className="flex flex-col rounded-panel border border-line p-5">
+            <span className="grid size-7 place-items-center rounded-full bg-asphalt-700 text-[13px] text-paint">
+              {i + 1}
+            </span>
+            <h3 className="mt-3 text-[17px] font-[620] text-paint">{step.title}</h3>
+            <p className="mt-2 flex-1 text-[14px] text-text-2">{step.summary}</p>
+            <Link
+              to={`/how-it-works#step-${i + 1}`}
+              className="mt-4 text-[14px] text-sodium underline"
+            >
+              {strings.story.readStep(i + 1)}
+            </Link>
+          </li>
+        ))}
       </ol>
+      {rows.length > 0 && (
+        <div className="mt-10 rounded-panel border border-line bg-asphalt-800 p-6">
+          <h3 className="h3">{strings.story.answerTitle}</h3>
+          <p className="mt-2 max-w-[72ch] text-text-2">
+            {strings.story.answerLead}{' '}
+            {better.length > 0 && strings.story.answerBetter(better.join(', '))}{' '}
+            {worse.length > 0 && strings.story.answerWorse(worse.join(', '))}
+          </p>
+          <Link to="/results" className="mt-4 inline-block text-sodium underline">
+            {strings.story.answerLink}
+          </Link>
+        </div>
+      )}
     </section>
   )
 }

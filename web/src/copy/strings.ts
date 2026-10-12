@@ -75,41 +75,14 @@ export const strings = {
     liveLabel: 'Running live in your browser',
   },
   story: {
-    title: 'How it’s built',
-    intro: 'Five pieces, built in order. Each one is live on this site as soon as it works.',
-    built: 'Built',
-    inProgress: 'In progress',
-    steps: [
-      {
-        title: 'A physics engine built for thousands of cars',
-        body: (cars: string, speedup: string, device: string) =>
-          `Tire slip, drag, weight, wind and puddles, simulated for ${cars} cars at once on one ${device} GPU, ${speedup}× faster than the same code on a CPU. The browser runs an exact port of it.`,
-        pending:
-          'Tire slip, drag, weight, wind and puddles, simulated for thousands of cars at once on one GPU.',
-      },
-      {
-        title: 'A population that teaches itself',
-        body: 'A population of drivers trains side by side. Every few minutes the weakest copy the strongest and tweak how they learn.',
-      },
-      {
-        title: 'A world that gets harder as they improve',
-        body: 'The simulator raises the difficulty on its own as the drivers improve: more rain, worn tires, laggy steering, gusty wind.',
-      },
-      {
-        title: 'A driver that feels the road',
-        body: 'A second network reads the last second of motion and estimates the grip under each axle. No one tells it the road is wet.',
-        measured: (ms: number) =>
-          `On a straight it notices a puddle under the rear wheels in about ${ms} ms.`,
-      },
-      {
-        title: 'A driver that knows when it’s unsure',
-        body: 'Five copies of the sensing network vote. When they disagree, the car knows it is somewhere unfamiliar.',
-        measured: (ece: string) =>
-          `Its crash-risk estimate is calibrated (error ${ece}), though only weakly predictive at this training budget.`,
-      },
-    ],
-    benchSource: (date: string, sha: string) =>
-      `From bench.json · measured ${date} · commit ${sha}`,
+    title: 'How it works, in five steps',
+    intro: 'From an empty simulator to cars that feel the road. Each step is live on this site.',
+    readStep: (n: number) => `Read step ${n}`,
+    answerTitle: 'Does it work?',
+    answerLead: 'Compared with the same AI without a sense of grip:',
+    answerBetter: (list: string) => `clearly more laps finished: ${list};`,
+    answerWorse: (list: string) => `clearly fewer: ${list}.`,
+    answerLink: 'See the full results',
   },
   playground: {
     title: 'Playground',
@@ -253,18 +226,86 @@ export const strings = {
   },
   how: {
     title: 'How it works',
-    intro:
-      'Six pieces, built in order. Each one combines a published technique with a custom simulator; nothing here is a new algorithm. What’s new is putting them together and measuring them honestly.',
-    pipeline: [
-      'Simulator',
-      'Curriculum',
-      'Population (PPO)',
-      'Teacher',
-      'Student ensemble',
-      'Browser',
+    lead: 'Five steps, from an empty simulator to cars that drive in the rain. Each step uses a published technique; what’s new is putting them together and testing them honestly.',
+    next: 'Next step',
+    detailsLabel: 'The technical details',
+    steps: [
+      {
+        tab: 'Build a world',
+        summary: 'A physics simulator with grip, rain, puddles, wind and worn tires.',
+        title: 'Build a world to practise in',
+        body: [
+          'A physics simulator of a car on a race track: tires that grip and then slide, rain that lowers grip everywhere, puddles that lower it in patches, wind, worn tires, heavy cars and laggy steering.',
+          'Learning to drive takes millions of laps, so the simulator runs thousands of cars at once on a graphics card. Your browser runs an exact copy of the same physics, which is why the cars on this site are the real thing.',
+        ],
+        stat: (cars: string, x: string) => ({
+          value: cars,
+          meaning: `cars simulated at once on one GPU, ${x}× faster than the same code on its CPU`,
+        }),
+        components: ['sim', 'browser'],
+      },
+      {
+        tab: 'Practise',
+        summary: 'AI drivers learn by trial and error, millions of laps over.',
+        title: 'Practise millions of laps',
+        body: [
+          'Each AI driver starts knowing nothing. It drives, crashes, and slowly learns what works: reinforcement learning, rewarded for making progress around the track without crashing.',
+          'Two tricks keep it learning. The world gets harder on its own as the drivers improve (more rain, worn tires, gusts). And a whole population trains side by side: every so often the weakest copies the strongest and tries new settings.',
+        ],
+        stat: (steps: string, minutes: string) => ({
+          value: steps,
+          meaning: `driving decisions practised in total, in ${minutes} minutes on one GPU`,
+        }),
+        components: ['ppo', 'curriculum'],
+        link: { to: '/lab', label: 'Watch it learn in the Training lab' },
+      },
+      {
+        tab: 'Feel the road',
+        summary: 'The Adaptive AI learns to sense grip from how the car moves.',
+        title: 'Learn to feel the road',
+        body: [
+          'First, a Teacher AI practises while being told the true conditions: the grip under each axle, the wind, the car’s weight. A real car can’t know these, so the teacher is only a training aid.',
+          'Then the Adaptive AI learns to work those conditions out from how the car moved in the last second (speed, slide, steering), and drives the way the teacher would. The Basic AI trains the same way but never gets this sense.',
+        ],
+        stat: (err: string, dry: string, ice: string) => ({
+          value: `± ${err}`,
+          meaning: `average error of its grip estimate, on a scale where dry asphalt grips at about ${dry} and ice at ${ice}`,
+        }),
+        components: ['teacher', 'student'],
+        link: { to: '/playground', label: 'Try the puddle test in the Playground' },
+      },
+      {
+        tab: 'Know when unsure',
+        summary: 'Five guesses that disagree mean it’s on unfamiliar ground.',
+        title: 'Know when it’s unsure',
+        body: [
+          'Five copies of the road-feeling network make their guesses separately. When they disagree, the car is probably somewhere it doesn’t understand.',
+          'That disagreement becomes a crash-risk percentage, and an optional safety governor eases off the throttle when the risk gets high.',
+        ],
+        stat: (ece: string) => ({
+          value: ece,
+          meaning:
+            'calibration error: when it says “20% risk”, about 20% of those moments really end in a crash (0 would be perfect)',
+        }),
+        components: ['confidence'],
+      },
+      {
+        tab: 'Test it fairly',
+        summary: 'Every driver races the same unseen tracks, in every condition.',
+        title: 'Test it fairly',
+        body: [
+          'Every driver races the same tracks it has never seen, in the same conditions, from the same start. That makes the comparison fair: any difference comes from the driver, not luck.',
+          'Results come with 95% ranges, and the ones that don’t favor the Adaptive AI are shown too.',
+        ],
+        stat: (tracks: string, conds: string) => ({
+          value: tracks,
+          meaning: `unseen test tracks, each raced in ${conds} conditions`,
+        }),
+        components: [],
+        link: { to: '/results', label: 'See the results' },
+      },
     ],
-    pipelineLabel:
-      'Pipeline: simulator, then curriculum, then a population trained with PPO, then the teacher, then the student ensemble, then the browser.',
+    moreTitle: 'Model card and how to reproduce',
     labels: {
       what: 'What it is',
       why: 'Why it’s here',
@@ -304,27 +345,27 @@ export const strings = {
       },
       {
         id: 'teacher',
-        title: 'The teacher',
+        title: 'The Teacher AI',
         what: 'A driver that is told the true conditions (grip under each axle, puddles ahead, mass, wind…) through a small encoder network that compresses them into 8 numbers.',
-        why: 'It shows how well a driver can do when it knows everything, and its 8-number summary is what the student learns to estimate.',
+        why: 'It shows how well a driver can do when it knows everything, and its 8-number summary is what the Adaptive AI learns to estimate.',
         measured:
-          'Completion in every condition (Results). It beats the blind driver in the wet, on puddles, worn tires and heavier cars, but not in wind or with noisy sensors; each teacher trained for two-thirds of the blind driver’s steps.',
+          'Completion in every condition (Results). It beats the Basic AI in the wet, on puddles, worn tires and heavier cars, but not in wind or with noisy sensors; each teacher trained for two-thirds of the Basic AI’s steps.',
         borrowed: 'Phase 1 of Rapid Motor Adaptation (Kumar, Fu, Pathak, Malik, 2021).',
       },
       {
         id: 'student',
-        title: 'The student: feeling the road',
+        title: 'The Adaptive AI (the “student”)',
         what: 'A second network reads the last second of motion (20 steps of speed, slip, steering and pedal inputs) and estimates the teacher’s 8-number summary plus the grip under each axle. The teacher’s driving network then acts on that estimate.',
         why: 'A real car isn’t told the road is wet. It has to feel it from how the car responds.',
         measured:
-          'Grip estimate error; whether it notices a single puddle (in controlled tests it doesn’t, compared against the same runs without the puddle); and completion vs the blind driver: better on puddles, wet roads, worn tires and a very heavy car, worse on dry roads, in wind and with noisy sensors. Why it does better in the wet isn’t isolated yet (Results).',
+          'Grip estimate error; whether it notices a single puddle (in controlled tests it doesn’t, compared against the same runs without the puddle); and completion vs the Basic AI: better on puddles, wet roads, worn tires and a very heavy car, worse on dry roads, in wind and with noisy sensors. Why it does better in the wet isn’t isolated yet (Results).',
         borrowed:
           'Phase 2 of Rapid Motor Adaptation (Kumar et al., 2021), trained DAgger-style (Ross et al., 2011).',
       },
       {
         id: 'confidence',
         title: 'Knowing when it’s unsure',
-        what: 'Five students trained with different seeds. When their estimates disagree, the car is probably somewhere it doesn’t understand. That disagreement is turned into a crash probability with isotonic regression; a safety governor eases off above a threshold.',
+        what: 'Five copies of the Adaptive AI’s road-feeling network, trained with different seeds. When their estimates disagree, the car is probably somewhere it doesn’t understand. That disagreement is turned into a crash probability with isotonic regression; a safety governor eases off above a threshold.',
         why: 'A driver that can say “I’m not sure” is more useful than one that is confidently wrong.',
         measured:
           'Calibration (reliability diagram, ECE, Brier, AUROC) and the governor’s crash-vs-speed trade-off (Results). The estimate is calibrated but only weakly predictive; the governor helped clearly in one condition (laggy steering) and made little difference elsewhere.',
@@ -347,11 +388,11 @@ export const strings = {
       rows: [
         [
           'Inputs',
-          'Driving: 33 numbers in the car’s frame (speed, slip, steering, last action, distance from the center line, heading error, 12 points of the road ahead, track width). Student: plus the last 1 s of motion (200 numbers). Teacher: plus 14 true conditions.',
+          'Driving: 33 numbers in the car’s frame (speed, slip, steering, last action, distance from the center line, heading error, 12 points of the road ahead, track width). Adaptive AI: plus the last 1 s of motion (200 numbers). Teacher AI: plus 14 true conditions.',
         ],
         [
           'Outputs',
-          'Steering and throttle/brake in [−1, 1], 20 times a second. The student also outputs grip estimates; the ensemble outputs a crash-risk estimate.',
+          'Steering and throttle/brake in [−1, 1], 20 times a second. The Adaptive AI also outputs grip estimates; the ensemble outputs a crash-risk estimate.',
         ],
         [
           'Training data',
@@ -363,7 +404,7 @@ export const strings = {
         ],
         [
           'Compute',
-          'One NVIDIA T4 GPU on Kaggle: blind population 8 × 150M steps, teacher population 16 × 100M, students 5 × 40M (the training budgets in the design). Total steps and wall time are on the Results page.',
+          'One NVIDIA T4 GPU on Kaggle: Basic AI population 8 × 150M steps, Teacher AI population 16 × 100M, the Adaptive AI’s five road-feeling networks 5 × 40M (the training budgets in the design). Total steps and wall time are on the Results page.',
         ],
         [
           'Intended use',
@@ -372,7 +413,7 @@ export const strings = {
         ['Not for', 'Anything involving real vehicles.'],
         [
           'Known limits',
-          'Flat 2D world, one car type, four-wheel effects collapsed into two axles, one training run per driver (no repeat seeds); the students share one teacher policy, so their disagreement reflects uncertainty about the road, not about the driving.',
+          'Flat 2D world, one car type, four-wheel effects collapsed into two axles, one training run per driver (no repeat seeds); the five copies share one driving policy, so their disagreement reflects uncertainty about the road, not about the driving.',
         ],
       ] as [string, string][],
       resultsLead: 'Every number on this site comes from the evaluation script.',

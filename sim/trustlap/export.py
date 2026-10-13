@@ -624,13 +624,130 @@ def resume_bullets(metrics: dict[str, Any]) -> str:
     return "\n".join(out)
 
 
+def resume_numbers(metrics: dict[str, Any]) -> str:
+    """Every measured number a resume or interview might use, as a fact sheet (metrics.json)."""
+    h = metrics["headline"]
+    s = metrics.get("suites", {})
+    p = metrics.get("protocol", {})
+    cal = metrics.get("calibration", {})
+    pct = lambda v: "–" if v is None else f"{v:.0%}"  # noqa: E731
+    out = ["**Simulator and compute**", ""]
+    if "max_parallel_cars" in h:
+        out.append(
+            f"- {h['max_parallel_cars']:,} cars simulated in parallel on one T4 GPU, "
+            f"{h['gpu_speedup_vs_cpu']:,.0f}× the same JAX code on its CPU"
+        )
+    if "train_env_steps_total" in h:
+        out.append(
+            f"- Training: {h['train_env_steps_total'] / 1e9:.1f} billion environment steps in "
+            f"{h['train_wall_minutes']:.0f} minutes on {h['train_hardware']}"
+        )
+    out += ["", "**Evaluation protocol**", ""]
+    if p:
+        out.append(
+            f"- {p.get('test_tracks')} held-out test tracks × {p.get('condition_seeds')} condition "
+            f"draws = {p.get('laps_per_driver_per_suite')} laps per driver per condition; "
+            f"{len(s)} conditions ({len([k for k in s if k in OOD_SUITES])} never trained on); "
+            f"{p.get('bootstrap_resamples')} paired cluster-bootstrap resamples over tracks"
+        )
+    out += [
+        "",
+        "**Laps finished out of 100, unseen test tracks**",
+        "",
+        "| Condition | Adaptive AI | Basic AI | Teacher AI | Rule-based |",
+        "|---|---|---|---|---|",
+    ]
+    for suite, row in s.items():
+        name = suite.replace("_", " ")
+        cells = [
+            pct((row.get(d) or {}).get("completion", {}).get("value"))
+            for d in ("student", "blind", "teacher", "scripted")
+        ]
+        out.append(f"| {name} | " + " | ".join(cells) + " |")
+    red = h.get("student_crash_reduction_vs_blind_combined")
+    gap = h.get("teacher_gap_combined")
+    out += ["", "**Headline comparisons**", ""]
+    if red and red.get("value") is not None:
+        v, (lo, hi) = red["value"], red["ci"]
+        out.append(
+            f"- Everything at once: {abs(v):.0%} {'fewer' if v >= 0 else 'more'} crashes than the "
+            f"Basic AI (95% CI {lo:.0%} to {hi:.0%})"
+        )
+    if gap and gap.get("value") is not None:
+        out.append(
+            f"- Share of the Teacher AI's advantage the Adaptive AI did not recover: "
+            f"{gap['value']:.0%} (95% CI {gap['ci'][0]:.0%} to {gap['ci'][1]:.0%})"
+        )
+    if "grip_mae" in h:
+        mu = CONFIG.conditions.mu_dry
+        out.append(
+            f"- Grip estimate error: ±{h['grip_mae']:.3f} μ "
+            f"(dry asphalt ≈ {mu.nominal:.2f}, ice {mu.ood:.2f})"
+        )
+    pl = h.get("puddle_latency_ms") or {}
+    if pl.get("trials"):
+        out.append(
+            f"- Single-puddle detection: {pl.get('noticed')} of {pl['trials']} controlled trials "
+            f"(control without a puddle: {pl.get('control_noticed', '–')} false alarms)"
+        )
+    if "ece" in cal:
+        line = (
+            f"- Crash-risk estimate: ECE {cal['ece']:.3f}, Brier {cal['brier']:.3f}, "
+            f"AUROC {cal['auroc']:.2f}"
+        )
+        base = (cal.get("baseline") or {}).get("auroc")
+        if base is not None:
+            line += f" (disagreement-only model: AUROC {base:.2f})"
+        out.append(line)
+    sweep = metrics.get("governor_sweep") or []
+    off = next((r for r in sweep if r["tau"] is None), None)
+    tau = cal.get("tau_default")
+    on = next((r for r in sweep if r["tau"] == tau), None)
+    if off and on:
+        out.append(
+            f"- Safety governor at τ = {tau}: crash rate {on['crash']['value']:.0%} vs "
+            f"{off['crash']['value']:.0%} without it (everything at once)"
+        )
+    gen = metrics.get("generalization")
+    if gen:
+        g = lambda bank, d: gen[bank].get(d, {}).get("completion", {}).get("value")  # noqa: E731
+        out.append(
+            "- Generalization (everything at once, laps per 100): training tracks vs unseen "
+            "tracks: Adaptive "
+            f"{pct(g('train_bank', 'student'))} vs {pct(g('test_bank', 'student'))}, Basic "
+            f"{pct(g('train_bank', 'blind'))} vs {pct(g('test_bank', 'blind'))}"
+        )
+    rep = metrics.get("replication")
+    if rep:
+        agree = [a for k, a in rep["agreement"].items() if k not in OOD_SUITES]
+        held = sum(a["same_in"] == a["of"] for a in agree)
+        out.append(
+            f"- Replication: {len(rep['seeds'])} independent training runs; {held} of {len(agree)} "
+            "per-condition verdicts identical in all of them"
+        )
+    fb = metrics.get("fallback")
+    if fb:
+        out.append(f"- Dry-road fallback threshold chosen on validation: {fb.get('threshold')}")
+    out += [
+        "",
+        "**Candidate bullets (generated; cut and reword freely)**",
+        "",
+        resume_bullets(metrics),
+    ]
+    return "\n".join(out)
+
+
 def update_resume(metrics: dict[str, Any], path: Path = REPO / "docs" / "RESUME.md") -> None:
-    path.write_text(
-        "# Resume bullets\n\n"
-        "Generated by `sim/trustlap/export.py` from `metrics.json` (don't edit by hand; "
-        "re-run the export). Numbers match the site and README.\n\n"
-        f"{resume_bullets(metrics)}\n"
-    )
+    """Rewrite only the generated block between the resume markers; the rest is hand-written."""
+    start, end = "<!-- resume:start -->", "<!-- resume:end -->"
+    block = f"{start}\n{resume_numbers(metrics)}\n{end}"
+    text = path.read_text() if path.exists() else ""
+    if start in text and end in text:
+        head, rest = text.split(start, 1)
+        _, tail = rest.split(end, 1)
+        path.write_text(f"{head}{block}{tail}")
+    else:
+        path.write_text(f"# TrustLap: resume notes\n\n{block}\n")
 
 
 def update_readme(metrics: dict[str, Any], readme: Path = REPO / "README.md") -> None:
